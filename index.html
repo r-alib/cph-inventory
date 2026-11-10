@@ -100,7 +100,9 @@ tr.bad td{background:#1c1316} tr.bad .d{color:var(--err);font-weight:700} tr.goo
 .mlist{display:flex;flex-direction:column;gap:7px;max-height:50vh;overflow:auto;margin-top:12px;padding-right:4px}
 .mpick{display:grid;grid-template-columns:44px 1fr auto;gap:11px;align-items:center;text-align:left;background:var(--panel2);border:1px solid var(--border);border-radius:var(--r-sm);padding:8px 10px;color:var(--ink)} .mpick:hover{border-color:var(--accent);background:#11211a}
 .mpick img{width:44px;height:44px;border-radius:8px;object-fit:cover;background:var(--raised)} .mpick .pn{font-weight:600;font-size:14px;line-height:1.2} .mpick .pv{font-size:11.5px;color:var(--muted);font-family:var(--mono)} .mpick .pt{font-size:12px;color:var(--faint);font-family:var(--mono);text-align:right} .mpick .pt.here{color:var(--accent)}
-.scanwrap{border-radius:var(--r);border:1px solid var(--border);background:var(--panel);overflow:hidden;margin-bottom:12px}
+.scanwrap{border-radius:var(--r);border:1px solid var(--border);background:var(--panel);overflow:visible;position:relative;z-index:20;margin-bottom:12px}
+.scanhead{border-radius:var(--r) var(--r) 0 0}
+.sugg{display:flex;flex-direction:column;gap:4px} .sugg .mpick{width:100%}
 .scanhead{display:flex;align-items:center;gap:10px;padding:8px 16px;border-bottom:1px solid var(--border);background:var(--panel2)}
 .mode{font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;font-weight:700;padding:4px 9px;border-radius:7px;color:var(--warn);background:#2a2113} .mode.label{color:var(--info);background:#15233a}
 .scanrow{display:flex;align-items:center;gap:10px;padding:12px 16px;flex-wrap:wrap} .scanrow input{flex:1;min-width:200px;background:var(--bg);border:1.5px solid var(--line);border-radius:11px;color:var(--ink);font-family:var(--mono);font-weight:700;font-size:17px;padding:12px 14px;outline:none} .scanrow input:focus{border-color:var(--accent)}
@@ -229,7 +231,7 @@ tr.bad td{background:#1c1316} tr.bad .d{color:var(--err);font-weight:700} tr.goo
      packstation/transfers           → ready transfers become ledger events
    Day boundaries: calendar days (local time). Streamer rooms: day = day shift + night shift (build 3).
    ============================================================ */
-const BUILD='2026-11-10c · shifts';
+const BUILD='2026-11-10e';
 const INV_CONFIG={apiKey:"AIzaSyAsTYwU0qABmXKuYSpyendwHw3djJc-Bqo",authDomain:"calipoke-inventory.firebaseapp.com",databaseURL:"https://calipoke-inventory-default-rtdb.firebaseio.com",projectId:"calipoke-inventory",storageBucket:"calipoke-inventory.firebasestorage.app",messagingSenderId:"156640764541",appId:"1:156640764541:web:833f96e4b0849b53454714"};
 const STATION_CONFIG={apiKey:"AIzaSyB2I2sR9czF6F29OZMyEZubmwQGP7nWFlc",authDomain:"calipoke-packstation.firebaseapp.com",databaseURL:"https://calipoke-packstation-default-rtdb.firebaseio.com",projectId:"calipoke-packstation",storageBucket:"calipoke-packstation.firebasestorage.app",messagingSenderId:"125288117157",appId:"1:125288117157:web:461b4d553e100c07b9ae4c"};
 const ROOT='inv', STATION_PATH='packstation';
@@ -382,22 +384,30 @@ async function postEvent(ev){
   return true;
 }
 /* ---- packstation transfers → ledger ---- */
-let ingestBusy=false;
+let ingestBusy=false, ingestAgain=false;
 async function ingestTransfers(){
-  if(ingestBusy||!R) return; ingestBusy=true;
+  if(!R) return; if(ingestBusy){ ingestAgain=true; return; } ingestBusy=true;
   try{
     for(const id in STR){ const t=STR[id]; if(!t||String(t.status||'').toLowerCase()!=='ready'||!t.to) continue;
       const claim=await R.child('ingest/transfers/'+fbKey(id)).transaction(c=>c?undefined:{at:Date.now(),by:MY_NAME,ts:+t.preparedAt||Date.now()});
       if(!claim.committed) continue;
-      const to=LOC_ALIAS[norm(t.to)]; const items=Array.isArray(t.items)?t.items:Object.values(t.items||{}); let n=0;
+      let to=LOC_ALIAS[norm(t.to)];
+      /* Streaming Game / Card Show requests land in their own sub-location */
+      if(t.type==='game'&&t.gameName) to='sub:'+await ensureSub('game',t.gameName,'stockroom',id); else if(t.type==='show'&&t.showName) to='sub:'+await ensureSub('show',t.showName,'cardshow',id);
+      const items=Array.isArray(t.items)?t.items:Object.values(t.items||{}); let n=0;
       for(let i=0;i<items.length;i++){ const ln=items[i]; const qty=+(ln.qtyPrepared!=null?ln.qtyPrepared:(ln.qtyApproved!=null?ln.qtyApproved:ln.qty))||0; const from=LOC_ALIAS[norm(ln.from)]; if(!qty||!to) continue;
         const ik=ln.ikey||keyOf(ln.name,ln.variation||'');
         await postEvent({key:'tr_'+fbKey(id)+'_'+i, item:ik, name:ln.name+(varOf(ln.variation)?' · '+ln.variation:''), qty, from:from||null, to, kind:'transfer', ts:+t.preparedAt||Date.now(), by:t.preparedBy||'transfer', src:'transfer-app', srcId:id, note:t.note||''}); n++; }
       if(n) toast('Transfer '+id+' posted · '+n+' line(s) → '+locName(to),'info',3200);
     }
   }catch(e){ console.warn('ingest',e); }
-  ingestBusy=false;
+  ingestBusy=false; if(ingestAgain){ ingestAgain=false; ingestTransfers(); }
 }
+
+/* find an open sub-location by kind+name (case-insensitive) or create it */
+async function ensureSub(kind,name,loc,reqId){ const nn=norm(name); for(const id in SUBS){ const s=SUBS[id]; if(s&&s.kind===kind&&s.status!=='closed'&&norm(s.name)===nn) return id; }
+  const snap=await R.child('subs').orderByChild('name').equalTo(name).once('value'); let found=null; snap.forEach(c=>{ const v=c.val(); if(v&&v.kind===kind&&v.status!=='closed') found=c.key; }); if(found) return found;
+  const ref=R.child('subs').push(); await ref.set({name,kind,at:loc,status:kind==='game'?'planning':'open',createdAt:Date.now(),createdBy:'transfer-app',request:reqId||null,items:{}}); SUBS[ref.key]={name,kind,at:loc,status:kind==='game'?'planning':'open',items:{}}; return ref.key; }
 
 /* ---- derived views ---- */
 function itemsAt(loc){ const m={}; if(loc==='warehouse'){ for(const k in WH) if(WH[k]) m[k]=WH[k]; return m; } if(isSub(loc)){ const s=subOf(loc); return Object.assign({},(s&&s.items)||{}); } return Object.assign({},BAL[loc]||{}); }
@@ -915,6 +925,9 @@ $('#camClose').onclick=closeCam;
    ============================================================ */
 function renderCurrent(){ if(!MY_NAME) return; if(screen==='menu') renderMenu(); else if(screen==='loc') renderLoc(); else if(screen==='overview') renderOverview(); else if(screen==='disc') renderDisc(); else if(screen==='history') renderHistory(); else if(screen==='game') renderGame(); }
 function goMenu(){ show('menu'); renderMenu(); }
+/* links from other apps: #loc/<id>/<tab> · #game/<subId> */
+function applyHash(){ if(!MY_NAME) return; const m=/^#loc\/([a-z0-9]+)(?:\/(stock|subs|days|log))?$/.exec(location.hash||''); if(m&&LOC_BY_ID[m[1]]){ openLoc(m[1]); if(m[2]){ lcTab=m[2]; renderLoc(); } return; } const g=/^#game\/(.+)$/.exec(location.hash||''); if(g&&SUBS[decodeURIComponent(g[1])]) openGame(decodeURIComponent(g[1]),'menu'); }
+window.addEventListener('hashchange',applyHash);
 $('#homeBtn').onclick=goMenu; $('#lcBack').onclick=goMenu; $('#ovBack').onclick=goMenu; $('#dcBack').onclick=goMenu; $('#hsBack').onclick=goMenu;
 $('#logoutBtn').onclick=()=>{ try{ localStorage.removeItem('cph.name'); }catch(e){} location.reload(); };
 $('#mOverview').onclick=()=>{ show('overview'); renderOverview(); }; $('#mDisc').onclick=()=>{ show('disc'); renderDisc(); }; $('#mHistory').onclick=()=>{ show('history'); renderHistory(); };
@@ -934,7 +947,7 @@ $('#hsCsv').onclick=()=>{ const l=$('#hsBody')._rows||[]; csv([['Time','Kind','I
 function roleOf(n){ return ELEVATED.includes(norm(n))?'admin':'staff'; }
 function enter(){ const v=$('#nameInput').value.trim(); if(v.length<2){ toast('Enter your name','warn'); return; } const role=roleOf(v);
   if(role!=='staff'){ const pin=$('#pinInput'); if(pin.classList.contains('hide')){ pin.classList.remove('hide'); $('#gateHint').textContent='This name has extra permissions — enter the PIN.'; pin.focus(); return; } if(pin.value.trim()!==ELEVATED_PIN){ toast('Wrong PIN','err'); pin.value=''; pin.focus(); return; } }
-  MY_NAME=v; MY_ROLE=role; try{ localStorage.setItem('cph.name',v); }catch(e){} $('#meName').textContent=v+(role!=='staff'?' · '+role:''); $('#mBoxes').classList.toggle('hide',role!=='admin'); $('#namegate').classList.add('hide'); $('#appHeader').classList.remove('hide'); $('#appMain').classList.remove('hide'); goMenu(); connect(); }
+  MY_NAME=v; MY_ROLE=role; try{ localStorage.setItem('cph.name',v); }catch(e){} $('#meName').textContent=v+(role!=='staff'?' · '+role:''); $('#mBoxes').classList.toggle('hide',role!=='admin'); $('#namegate').classList.add('hide'); $('#appHeader').classList.remove('hide'); $('#appMain').classList.remove('hide'); goMenu(); connect(); setTimeout(applyHash,400); }
 $('#enterBtn').onclick=enter; $('#nameInput').addEventListener('keydown',e=>{ if(e.key==='Enter') enter(); }); $('#pinInput').addEventListener('keydown',e=>{ if(e.key==='Enter') enter(); });
 $('#nameInput').addEventListener('input',()=>{ if(roleOf($('#nameInput').value)==='staff'){ $('#pinInput').classList.add('hide'); $('#gateHint').textContent='Your name goes on every movement you make.'; } });
 (function boot(){ try{ const s=localStorage.getItem('cph.name'); if(s){ $('#nameInput').value=s; if(roleOf(s)!=='staff'){ $('#pinInput').classList.remove('hide'); $('#gateHint').textContent='This name has extra permissions — enter the PIN.'; } } }catch(e){} applyLogo(); $('#buildTag').textContent='v'+BUILD; $('#gateSub').textContent='Calipokehouse · stock by location · v'+BUILD; })();
