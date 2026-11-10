@@ -184,7 +184,8 @@ tr.bad td{background:#1c1316} tr.bad .d{color:var(--err);font-weight:700} tr.goo
     <div class="topbar"><button class="btn ghost" id="ovBack">← Locations</button><h1 style="margin:0">📊 All locations</h1><div class="spacer"></div>
       <div class="daybar"><span class="mini">Day</span><input type="date" id="ovDate"><button class="btn sm" id="ovToday">Today</button></div>
       <button class="btn sm" id="ovCsv">⬇ CSV</button></div>
-    <div class="row"><input id="ovQ" class="tinput" style="max-width:360px" placeholder="Find an item…" autocomplete="off"><select id="ovSort" class="sel"><option value="name">Sort: name</option><option value="type">Group by type</option><option value="brand">Group by brand</option><option value="series">Group by series</option></select><label class="mini" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="ovZero"> show items that are 0 everywhere</label></div>
+    <div class="row"><input id="ovQ" class="tinput" style="max-width:360px" placeholder="Find an item…" autocomplete="off"><select id="ovType" class="sel"></select><select id="ovBrand" class="sel"></select><select id="ovSeries" class="sel"></select><select id="ovSort" class="sel"><option value="name">Sort: name</option><option value="type">Group by type</option><option value="brand">Group by brand</option><option value="series">Group by series</option></select><button class="btn sm ghost" id="ovClear">✕ Clear</button><label class="mini" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="ovZero"> show items that are 0 everywhere</label></div>
+    <div class="chipbar" id="ovChips" style="margin:8px 0 0"></div>
     <div class="tscroll"><table id="ovTbl"></table></div>
     <p class="mini" style="margin-top:10px">Columns = locations (sub-locations inside each location are included in its figure). Pick an earlier day to see the closing stock of that day.</p>
   </section>
@@ -234,7 +235,7 @@ tr.bad td{background:#1c1316} tr.bad .d{color:var(--err);font-weight:700} tr.goo
      packstation/transfers           → ready transfers become ledger events
    Day boundaries: calendar days (local time). Streamer rooms: day = day shift + night shift (build 3).
    ============================================================ */
-const BUILD='2026-11-10f';
+const BUILD='2026-11-10g';
 const INV_CONFIG={apiKey:"AIzaSyAsTYwU0qABmXKuYSpyendwHw3djJc-Bqo",authDomain:"calipoke-inventory.firebaseapp.com",databaseURL:"https://calipoke-inventory-default-rtdb.firebaseio.com",projectId:"calipoke-inventory",storageBucket:"calipoke-inventory.firebasestorage.app",messagingSenderId:"156640764541",appId:"1:156640764541:web:833f96e4b0849b53454714"};
 const STATION_CONFIG={apiKey:"AIzaSyB2I2sR9czF6F29OZMyEZubmwQGP7nWFlc",authDomain:"calipoke-packstation.firebaseapp.com",databaseURL:"https://calipoke-packstation-default-rtdb.firebaseio.com",projectId:"calipoke-packstation",storageBucket:"calipoke-packstation.firebasestorage.app",messagingSenderId:"125288117157",appId:"1:125288117157:web:461b4d553e100c07b9ae4c"};
 const ROOT='inv', STATION_PATH='packstation';
@@ -501,13 +502,14 @@ function openCount(loc,opts){ opts=opts||{};
         return '<tr class="'+cls+'"><td>'+img(it.image,'thumb zoomable')+'</td><td class="name">'+(l.tmp?'<span class="badge warn">temp</span> ':'')+esc(it.name)+(varOf(it.variation)?' <span class="mini">· '+esc(it.variation)+'</span>':'')+'</td><td class="num">'+fmt(l.exp)+'</td>'+
           '<td class="num">'+(l.cnt==null?'<span class="mini">not scanned</span>':'<input class="qi'+(l.cnt===l.exp?' same':' diff')+'" data-k="'+esc(k)+'" value="'+l.cnt+'">')+'</td><td class="num d">'+(l.cnt==null?'':((l.cnt-l.exp>0?'+':'')+(l.cnt-l.exp)))+'</td>'+
           '<td>'+(l.cnt==null&&!l.tmp?'<button class="btn sm ghost" data-none="'+esc(k)+'" title="This product is not here physically">∅ Not here</button>':(l.cnt!=null?'<button class="btn sm ghost" data-clear="'+esc(k)+'" title="Clear this count">↺</button>':''))+'</td></tr>'; }).join(''):'<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:20px">The system expects nothing here — scan what you find.</td></tr>')+'</tbody></table></div>'+
-      '<div class="row" style="margin-top:14px"><div class="spacer"></div><button class="btn ghost" id="ctX">Cancel</button>'+
+      '<div class="row" style="margin-top:14px">'+(isAdmin()?'<span class="mini">admin · test:</span><button class="btn sm ghost" id="ctAllMatch" title="Fill every line with the expected number">✓ All match</button><button class="btn sm ghost" id="ctNothing" title="Fill every line with 0">∅ Nothing here</button>':'')+'<div class="spacer"></div><button class="btn ghost" id="ctX">Cancel</button>'+
       (isAdmin()&&!opts.noApply?'<button class="btn warn" id="ctApply" '+(left?'disabled':'')+'>✎ Apply corrections</button>':'')+
       '<button class="btn primary" id="ctSave" '+(left?'disabled':'')+'>'+(diffs?'✓ Confirm with '+diffs+' discrepanc'+(diffs===1?'y':'ies'):'✓ Confirm — all match')+'</button></div>'+(left?'<p class="mini" style="margin-top:8px;color:var(--warn)">'+left+' line(s) not scanned yet — scan them, or mark the ones that are not here.</p>':''),true);
     d.querySelectorAll('.qi').forEach(i=>{ i.addEventListener('change',()=>{ const v=i.value.trim(); lines[i.dataset.k].cnt=v===''?null:Math.max(0,int(v)); focusTo=null; draw(); }); i.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); i.blur(); } }); });
     d.querySelectorAll('[data-none]').forEach(b=>b.onclick=()=>{ const k=b.dataset.none; if(!confirm(itemInfo(k).name+' — expected '+fmt(lines[k].exp)+', confirm that it is NOT here (counted 0)?')) return; lines[k].cnt=0; focusTo='scan'; draw(); });
     d.querySelectorAll('[data-clear]').forEach(b=>b.onclick=()=>{ const k=b.dataset.clear; if(lines[k].tmp) delete lines[k]; else lines[k].cnt=null; focusTo='scan'; draw(); });
     d.querySelector('#ctX').onclick=()=>{ if(!counted||confirm('Leave the count? Nothing is saved.')) closeModal(); };
+    const am=d.querySelector('#ctAllMatch'); if(am) am.onclick=()=>{ keys.forEach(k=>{ if(!lines[k].tmp) lines[k].cnt=lines[k].exp; }); focusTo=null; draw(); }; const nh=d.querySelector('#ctNothing'); if(nh) nh.onclick=()=>{ if(!confirm('Set every line to 0?')) return; keys.forEach(k=>{ if(!lines[k].tmp) lines[k].cnt=0; }); focusTo=null; draw(); };
     const sc=d.querySelector('#ctScan'), sg=d.querySelector('#ctSugg');
     const pick=k=>{ k=fbKey(k); sc.value=''; sg.classList.add('hide'); if(!lines[k]) lines[k]={exp:balAt(loc,k),cnt:null}; askQty(k); };
     const tempItem=()=>{ sg.classList.add('hide'); const pre=sc.value.trim(); sc.value='';
@@ -889,12 +891,17 @@ document.addEventListener('pointerup',()=>{ if(!dnd) return; const d=dnd; dnd=nu
 /* ============================================================
    OVERVIEW — all locations, any day
    ============================================================ */
+const ovF={type:'',brand:'',series:''}; const OV_LABEL={type:'Type',brand:'Brand',series:'Series'};
+function ovMatch(k,skip){ const it=itemInfo(k); return ['type','brand','series'].every(f=>f===skip||!ovF[f]||norm(it[f])===norm(ovF[f])); }
+function buildOvFilters(keys){ [['ovType','type'],['ovBrand','brand'],['ovSeries','series']].forEach(([id,f])=>{ const sel=$('#'+id); const vals=[...new Set(keys.filter(k=>ovMatch(k,f)).map(k=>itemInfo(k)[f]||'').filter(Boolean))].sort((a,b)=>a.localeCompare(b)); if(ovF[f]&&!vals.some(v=>norm(v)===norm(ovF[f]))) vals.push(ovF[f]);
+    sel.innerHTML='<option value="">'+OV_LABEL[f]+' — all</option>'+vals.map(v=>'<option value="'+esc(v)+'"'+(norm(v)===norm(ovF[f])?' selected':'')+'>'+esc(v)+'</option>').join(''); });
+  $('#ovChips').innerHTML=['type','brand','series'].filter(f=>ovF[f]).map(f=>'<button class="chip on" data-fclear="'+f+'">'+OV_LABEL[f]+': '+esc(ovF[f])+' ✕</button>').join(''); $$('#ovChips [data-fclear]').forEach(b=>b.onclick=()=>{ ovF[b.dataset.fclear]=''; renderOverview(); }); }
 function renderOverview(){
   $('#ovDate').value=ovDay; const q=norm($('#ovQ').value); const showZero=$('#ovZero').checked; const ts=Math.min(dayEnd(ovDay)-1,Date.now());
   const cols=LOCS.map(l=>({id:l.id,name:l.name,m:l.id==='warehouse'?itemsAt('warehouse'):balancesAtTime(l.id,ts)}));
   let keys=new Set(); cols.forEach(c=>Object.keys(c.m).forEach(k=>keys.add(k))); if(showZero) Object.keys(INV).forEach(k=>keys.add(fbKey(k)));
   const sortBy=$('#ovSort').value||'name'; const grp=k=>sortBy==='name'?'':(itemInfo(k)[sortBy]||'— no '+sortBy+' —');
-  keys=[...keys].filter(k=>!q||norm(itemInfo(k).name).includes(q)||norm(itemInfo(k).brand).includes(q)||norm(itemInfo(k).series).includes(q)).sort((a,b)=>grp(a).localeCompare(grp(b))||itemInfo(a).name.localeCompare(itemInfo(b).name));
+  keys=[...keys]; buildOvFilters(keys); keys=keys.filter(k=>ovMatch(k)).filter(k=>!q||norm(itemInfo(k).name).includes(q)||norm(itemInfo(k).brand).includes(q)||norm(itemInfo(k).series).includes(q)).sort((a,b)=>grp(a).localeCompare(grp(b))||itemInfo(a).name.localeCompare(itemInfo(b).name));
   const rows=keys.map(k=>({k,g:grp(k),vals:cols.map(c=>+c.m[k]||0)})).filter(r=>showZero||r.vals.some(v=>v));
   let lastG=null; const ncol=cols.length+4;
   $('#ovTbl').innerHTML='<thead><tr><th></th><th>Item</th>'+cols.map(c=>'<th class="num">'+esc(c.name)+'</th>').join('')+'<th class="num">Total</th><th class="num" title="Everything except the warehouse">LS</th></tr></thead><tbody>'+(rows.length?rows.slice(0,1500).map(r=>{ const it=itemInfo(r.k); let h=''; if(sortBy!=='name'&&r.g!==lastG){ lastG=r.g; h+='<tr><td colspan="'+ncol+'" style="background:var(--panel2);font-family:var(--disp);font-weight:700;color:var(--sub);padding:8px 11px">'+esc(r.g)+'</td></tr>'; }
@@ -978,7 +985,7 @@ $('#gmBack').onclick=()=>{ if(gmBackTo==='loc'&&curLoc){ show('loc'); lcTab='sub
 $('#mReload').onclick=()=>loadInventory(true);
 $$('#lcTabs button').forEach(b=>b.onclick=()=>{ lcTab=b.dataset.t; renderLoc(); });
 $('#lcCount').onclick=()=>openCount(curLoc); $('#lcNewSub').onclick=()=>openNewSub(curLoc);
-$('#ovDate').addEventListener('change',e=>{ ovDay=e.target.value||dayOf(Date.now()); renderOverview(); }); $('#ovToday').onclick=()=>{ ovDay=dayOf(Date.now()); renderOverview(); }; $('#ovQ').addEventListener('input',renderOverview); $('#ovZero').addEventListener('change',renderOverview); $('#ovSort').addEventListener('change',renderOverview);
+$('#ovDate').addEventListener('change',e=>{ ovDay=e.target.value||dayOf(Date.now()); renderOverview(); }); $('#ovToday').onclick=()=>{ ovDay=dayOf(Date.now()); renderOverview(); }; $('#ovQ').addEventListener('input',renderOverview); $('#ovZero').addEventListener('change',renderOverview); $('#ovSort').addEventListener('change',renderOverview); [['ovType','type'],['ovBrand','brand'],['ovSeries','series']].forEach(([id,f])=>$('#'+id).addEventListener('change',e=>{ ovF[f]=e.target.value; renderOverview(); })); $('#ovClear').onclick=()=>{ ovF.type=ovF.brand=ovF.series=''; $('#ovQ').value=''; $('#ovSort').value='name'; renderOverview(); };
 $('#ovCsv').onclick=()=>{ const t=$('#ovTbl'); csv([['Item','Type','Brand','Series',...t._cols.map(c=>c.name),'Total']].concat(t._rows.map(r=>[itemInfo(r.k).name+(varOf(itemInfo(r.k).variation)?' · '+itemInfo(r.k).variation:''),itemInfo(r.k).type||'',itemInfo(r.k).brand||'',itemInfo(r.k).series||'',...r.vals,r.vals.reduce((a,b)=>a+b,0)])),'cph_inventory_'+ovDay+'.csv'); };
 $$('#dcTabs button').forEach(b=>b.onclick=()=>{ dcTab=b.dataset.t; renderDisc(); }); $('#dcUpd').onclick=()=>{ toast('Reading Daily SOH…','info',1500); refreshDSOH(true); };
 $('#dcCsv').onclick=()=>{ if(dcTab==='soh'&&$('#dcBody')._rows) csv([['Item','WH system','WH EOD SOH','Δ WH','LS system','LS EOD SOH','Δ LS']].concat($('#dcBody')._rows.map(r=>[r.n,r.wh,r.eWh??'',r.dWh??'',r.ls,r.eLs??'',r.dLs??''])),'cph_vs_dailysoh_'+(DSOH?DSOH.date:'')+'.csv'); else csv([['When','Location','Item','System','Counted','Diff','By','Status']].concat(Object.values(DISC).map(d=>[fmtTime(d.at),locName(d.loc),d.name,d.exp,d.cnt,d.cnt-d.exp,d.by,d.status])),'cph_discrepancies.csv'); };
