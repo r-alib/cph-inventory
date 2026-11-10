@@ -235,7 +235,7 @@ tr.bad td{background:#1c1316} tr.bad .d{color:var(--err);font-weight:700} tr.goo
      packstation/transfers           → ready transfers become ledger events
    Day boundaries: calendar days (local time). Streamer rooms: day = day shift + night shift (build 3).
    ============================================================ */
-const BUILD='2026-11-10h';
+const BUILD='2026-11-10j';
 const INV_CONFIG={apiKey:"AIzaSyAsTYwU0qABmXKuYSpyendwHw3djJc-Bqo",authDomain:"calipoke-inventory.firebaseapp.com",databaseURL:"https://calipoke-inventory-default-rtdb.firebaseio.com",projectId:"calipoke-inventory",storageBucket:"calipoke-inventory.firebasestorage.app",messagingSenderId:"156640764541",appId:"1:156640764541:web:833f96e4b0849b53454714"};
 const STATION_CONFIG={apiKey:"AIzaSyB2I2sR9czF6F29OZMyEZubmwQGP7nWFlc",authDomain:"calipoke-packstation.firebaseapp.com",databaseURL:"https://calipoke-packstation-default-rtdb.firebaseio.com",projectId:"calipoke-packstation",storageBucket:"calipoke-packstation.firebasestorage.app",messagingSenderId:"125288117157",appId:"1:125288117157:web:461b4d553e100c07b9ae4c"};
 const ROOT='inv', STATION_PATH='packstation';
@@ -284,6 +284,7 @@ const subOf=id=>SUBS[String(id||'').slice(4)]||null;
 /* ---------- state ---------- */
 let MY_NAME='', MY_ROLE='staff', db=null, R=null, SDB=null, DB_ON=false;
 let INV={}, BC={};            // catalog by ikey; barcode -> [ikey]
+let SHEET_INV={}, CUSTOM={};  // sheet products / products created by the system (inv/catalog)
 let BAL={};                   // loc -> ikey -> qty
 let SUBS={};                  // subId -> sub
 let LEDGER=[];                // sorted by ts asc
@@ -324,7 +325,7 @@ function parseInventory(buf){
     map[k]={ikey:k,name:nm,variation:va,barcode:ci.barcode>=0?String(row[ci.barcode]??'').trim():'',image:ci.image>=0?String(row[ci.image]??'').trim():'',type:ci.type>=0?String(row[ci.type]??'').trim():'',brand:ci.brand>=0?String(row[ci.brand]??'').trim():'',series:ci.series>=0?String(row[ci.series]??'').trim():'',packQty:ci.qty>=0?Math.max(1,int(row[ci.qty])||1):1}; }
   return map;
 }
-function setInventory(map){ INV=map; BC={}; INV_FB={}; for(const k in INV){ INV_FB[fbKey(k)]=k; } for(const k in INV) for(const b of barcodesOf(INV[k].barcode)){ (BC[b]=BC[b]||[]); if(!BC[b].includes(k)) BC[b].push(k); } $('#catCount').textContent=Object.keys(INV).length; renderCurrent(); }
+function setInventory(map){ if(map) SHEET_INV=map; INV=Object.assign({},SHEET_INV); for(const k in CUSTOM) if(!INV[k]) INV[k]=CUSTOM[k]; BC={}; INV_FB={}; for(const k in INV){ INV_FB[fbKey(k)]=k; } for(const k in INV) for(const b of barcodesOf(INV[k].barcode)){ (BC[b]=BC[b]||[]); if(!BC[b].includes(k)) BC[b].push(k); } $('#catCount').textContent=Object.keys(INV).length; renderCurrent(); }
 async function loadInventory(force){
   if(!force){ try{ const c=JSON.parse(localStorage.getItem('cph.inv.v1')||'null'); if(c&&c.map&&Date.now()-c.at<INV_CACHE_MS){ setInventory(c.map); return; } }catch(e){} }
   try{ const map=parseInventory(await fetchSheet(INVENTORY_SHEET_URL)); try{ localStorage.setItem('cph.inv.v1',JSON.stringify({at:Date.now(),map})); }catch(e){} setInventory(map); if(force) toast('Catalog refreshed · '+Object.keys(map).length+' products','ok'); }
@@ -351,6 +352,7 @@ function connect(){
   R.child('discrepancies').on('value',s=>{ DISC=s.val()||{}; renderCurrent(); });
   R.child('counts').on('value',s=>{ COUNTS=s.val()||{}; renderCurrent(); });
   R.child('boxes').on('value',s=>{ BOXES=s.val()||{}; renderCurrent(); });
+  R.child('catalog').on('value',s=>{ CUSTOM={}; const v=s.val()||{}; for(const fk in v){ const c=v[fk]; if(c&&c.ikey) CUSTOM[c.ikey]=c; } setInventory(null); });
   R.child('shifts').on('value',s=>{ SHIFTS=s.val()||{}; renderCurrent(); });
   /* Warehouse = the live inventory count of the station, every location except STORE */
   SDB.ref(STATION_PATH+'/stockCount/base').on('value',s=>{ WH_BASE=s.val()||null; rebuildWH(); });
@@ -579,7 +581,7 @@ function renderGame(){
   const hint=st==='planning'?'Build the list from the Stockroom: scan or type a product. Open boxes into packs, group products into bundles.':st==='ready'?(s.editing?'Editing the list.':'List is ready. Move the game to the streamer\'s room — the streamer presses Start game there.'):live?'Selling: scan or type a product or a bundle. Leftovers stay in the game.':st==='ended'?'Game ended — leftovers are fixed in the game. Count them if needed, then move the game whole to another room or back to the Stockroom (Return all puts leftovers on the shelf).':'Closed — kept in history.';
   const kv='<div class="kvs">'+(start&&unitsOf(start)?'<div class="kv"><div class="n">'+fmt(unitsOf(start))+'</div><div class="l">start</div></div><div class="kv ok"><div class="n">'+fmt(unitsOf(sold))+'</div><div class="l">sold</div></div>':'')+'<div class="kv info"><div class="n">'+fmt(unitsOf(items))+'</div><div class="l">'+(start&&unitsOf(start)?'left':'units in the game')+'</div></div><div class="kv"><div class="n">'+Object.keys(bundles).length+'</div><div class="l">bundles</div></div><div class="kv"><div class="n" style="font-size:16px">'+esc(locName(s.at))+'</div><div class="l">now in</div></div></div>';
   const scan=(edit||live)?'<div class="scanwrap"><div class="scanhead"><span class="mode'+(live?'':' label')+'">'+(live?'💲 Selling':'＋ Adding from Stockroom')+'</span><span class="mini">'+esc(hint)+'</span></div><div class="scanrow" style="position:relative"><input id="gmScan" autocomplete="off" placeholder="'+(live?'Scan or type a product or bundle…':'Scan or type a product…')+'"><button class="btn" id="gmCam">📷</button>'+(edit?'<button class="btn" id="gmNewBundle">🎁 Create bundle</button>':'')+'<div class="sugg hide" id="gmSugg"></div></div></div>':'<div class="note info" style="margin-bottom:12px">'+esc(hint)+'</div>';
-  const rows=keys.filter(k=>!q||norm(itemInfo(k).name).includes(q)).map(k=>{ const it=itemInfo(k); const n=+items[k]||0; const isBox=/\bbox\b|booster box|display/i.test(it.name)&&!/pack/i.test(it.name)||!!BOXES[fbKey(k)];
+  const rows=keys.filter(k=>!q||norm(itemInfo(k).name).includes(q)).map(k=>{ const it=itemInfo(k); const n=+items[k]||0; const isBox=isBoxLike(k);
     const qty=start&&unitsOf(start)?'<div class="q3"><span>start<b>'+fmt(start[k]||0)+'</b></span><span>sold<b style="color:var(--ok)">'+fmt(sold[k]||0)+'</b></span><span>left<b'+(n<0?' style="color:var(--err)"':'')+'>'+fmt(n)+'</b></span></div>':'<div class="q'+(n<0?' neg':'')+'">'+fmt(n)+'<small>units</small></div>';
     const acts=live?(isBox&&n>0?'<button class="btn sm warn" data-open="'+esc(k)+'">📦 Open box</button>':'')+'<button class="btn sm primary" data-sell="'+esc(k)+'" '+(n>0?'':'disabled')+'>💲 Sell</button>':edit?(isBox&&n>0?'<button class="btn sm warn" data-open="'+esc(k)+'">📦 Open box</button>':'')+'<button class="btn sm" data-bundle="'+esc(k)+'" title="Add to bundle">🎁</button><button class="btn sm ghost" data-rm="'+esc(k)+'" title="Return to Stockroom">−</button>':'';
     return '<div class="irow" data-k="'+esc(k)+'" data-loc="'+sid+'">'+img(it.image)+'<div><div class="nm">'+esc(it.name)+'</div><div class="vr">'+esc(varOf(it.variation))+(it.barcode?' · <span class="mono">'+esc(barcodesOf(it.barcode)[0]||'')+'</span>':'')+'</div></div>'+qty+'<div class="acts">'+acts+'</div></div>'; });
@@ -634,11 +636,18 @@ function askRemove(k){ const s=SUBS[curGame]; const it=itemInfo(k); const have=+
   const inp=d.querySelector('#grQ'); const ok=async()=>{ const n=Math.min(have,int(inp.value)); if(n<1) return; await postEvent({item:k,qty:n,from:'sub:'+curGame,to:'stockroom',kind:'sub',note:'removed from game · '+s.name}); closeModal(); toast('↩ '+n+' × '+it.name+' back to the Stockroom','ok',1800); };
   d.querySelector('#grOk').onclick=ok; inp.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); ok(); } }); setTimeout(()=>{ inp.focus(); inp.select(); },50); }
 /* ---- open box → packs ---- */
+/* "Ascended Heroes BB" → "Ascended Heroes Pack" */
+function packNameFor(boxName){ let n=String(boxName||'').replace(/\(.*?\)/g,' '); n=n.replace(/\b(elite trainer box|booster box|booster bundle|booster display|display box|display|collection box|box|bb|etb|tin|case|bundle|blister)\b/ig,' '); n=n.replace(/\s+/g,' ').replace(/[\s\-–·,]+$/,'').trim(); return (n||String(boxName).trim())+' Pack'; }
+async function ensurePackProduct(boxName){ const want=packNameFor(boxName); const cw=clean(want);
+  for(const k in INV){ const v=INV[k]; if(clean(v.name)===cw&&!varOf(v.variation)) return k; }
+  const g=guessPack(boxName); if(g.length===1) return g[0].ikey;
+  const ikey=keyOf(want,''); const rec={ikey,name:want,variation:'',barcode:'',image:'',type:'Pack',auto:true,fromBox:boxName,by:MY_NAME,at:Date.now()};
+  await R.child('catalog/'+fbKey(ikey)).set(rec); CUSTOM[ikey]=rec; setInventory(null); toast('Created product "'+want+'" for the packs of this box','info',3500); return ikey; }
 function guessPack(boxName){ const q=boxName.replace(/booster box|display box|\bbox\b/ig,'').trim(); return searchProducts(q,30).filter(p=>/pack/i.test(p.name)&&!/box/i.test(p.name)); }
-function boxSetup(k,done){ /* first time: who opens it enters the packs per box; admin may change the main value later */
-  const it=itemInfo(k); const cfg=BOXES[fbKey(k)]||{}; let pack=cfg.pack||null; const sugg=guessPack(it.name); if(!pack&&sugg.length===1) pack=sugg[0].ikey;
+async function boxSetup(k,done){ /* first time: who opens it enters the packs per box; admin may change the main value later */
+  const it=itemInfo(k); const cfg=BOXES[fbKey(k)]||{}; let pack=cfg.pack||null; const sugg=guessPack(it.name); if(!pack) pack=await ensurePackProduct(it.name);
   const d=modal('<h2>📦 Box settings</h2><div class="pcard">'+img(it.image)+'<div><div class="cn">'+esc(it.name)+'</div><div class="cv">'+esc(varOf(it.variation))+'</div></div></div>'+
-    '<div class="fld"><label>Pack product (what comes out of the box)</label><div style="position:relative"><input id="bsQ" class="tinput" style="width:100%;font-family:var(--body)" placeholder="Search the pack product…" autocomplete="off"><div class="sugg hide" id="bsSugg"></div></div><div id="bsPick" class="mini" style="margin-top:6px"></div></div>'+
+    '<div class="fld"><label>Pack product (what comes out of the box)'+(pack&&INV[pack]&&INV[pack].auto?' · <span style="color:var(--info);text-transform:none;letter-spacing:0">created automatically — change it if the real pack exists under another name</span>':'')+'</label><div style="position:relative"><input id="bsQ" class="tinput" style="width:100%;font-family:var(--body)" placeholder="Search the pack product…" autocomplete="off"><div class="sugg hide" id="bsSugg"></div></div><div id="bsPick" class="mini" style="margin-top:6px"></div></div>'+
     '<div class="fld"><label>Packs per box</label><input id="bsN" class="bigqty" type="number" min="1" value="'+(cfg.packs||36)+'"></div>'+
     '<div class="row" style="margin-top:16px"><button class="btn primary lg" id="bsOk" style="flex:1">Save</button><button class="btn ghost" id="bsX">Cancel</button></div>');
   const pickEl=d.querySelector('#bsPick'), q=d.querySelector('#bsQ'), sg=d.querySelector('#bsSugg'); const drawPick=()=>{ pickEl.innerHTML=pack?'→ <b>'+esc(itemInfo(pack).name)+'</b>'+(varOf(itemInfo(pack).variation)?' · '+esc(itemInfo(pack).variation):''):'<span style="color:var(--warn)">No pack product chosen yet</span>'; }; drawPick();
@@ -846,7 +855,8 @@ function renderStock(body){
   wireRows('#lcList',curLoc);
 }
 function elsewhereHTML(q){ const rows=searchProducts(q,8); const parts=[]; rows.forEach(v=>{ const where=[]; LOCS.forEach(l=>{ const b=balAt(l.id,v.ikey); if(b) where.push(locName(l.id)+' '+fmt(b)); }); subsAt(null); Object.keys(SUBS).forEach(id=>{ const s=SUBS[id]; if(s.status!=='closed'&&s.items&&+s.items[v.ikey]) where.push('🧺 '+s.name+' '+fmt(+s.items[v.ikey])); }); if(where.length) parts.push('<b>'+esc(v.name)+(varOf(v.variation)?' · '+esc(v.variation):'')+'</b>: '+esc(where.join(' · '))); }); return parts.length?'Also in: '+parts.join('<br>')+(curLoc==='stockroom'?'<br><span style="color:var(--warn)">Not here — request a transfer first.</span>':''):'Not in any location.'; }
-const isBoxLike=k=>{ const it=itemInfo(k); return !!BOXES[fbKey(k)]||(/\bbox\b|booster box|display/i.test(it.name)&&!/pack/i.test(it.name)); };
+/* anything that is not a pack can be opened (boxes, ETBs, cases, bundles, tins…); the pack product is set when it is opened the first time */
+const isBoxLike=k=>{ const it=itemInfo(k); if(BOXES[fbKey(k)]) return true; if(it.tmp) return false; const t=norm(it.type||''); if(t) return !/pack|single|slab|card|accessor|sleeve/.test(t); return !/\bpacks?\b|booster pack|sleeve/i.test(it.name); };
 function rowHTML(k,qty,reserved,loc){ const it=itemInfo(k); const at=loc||curLoc; const ro=at==='warehouse'; const ready=qty-(reserved||0); const canOpen=!ro&&qty>0&&isBoxLike(k)&&(isSub(at)||['stockroom','tiktok1','ebay','whatnot'].includes(at));
   return '<div class="irow" data-k="'+esc(k)+'" data-loc="'+esc(at)+'">'+img(it.image)+'<div><div class="nm">'+esc(it.name)+'</div><div class="vr">'+esc(varOf(it.variation))+(it.barcode?' · <span class="mono">'+esc(barcodesOf(it.barcode)[0]||'')+'</span>':'')+(reserved?' · <span style="color:var(--warn)">reserved '+fmt(reserved)+' · ready '+fmt(ready)+'</span>':'')+'</div></div>'+
     '<div class="q'+(qty<0?' neg':(reserved?' res':''))+'">'+fmt(qty)+'<small>units</small></div><div class="acts">'+(ro?'':'<span class="grip" title="Drag to another location">⠿</span>'+(canOpen?'<button class="btn sm warn" data-open="'+esc(k)+'" title="Open box → packs">📦 Open</button>':'')+'<button class="btn sm" data-tr="'+esc(k)+'">⇄</button>'+(isAdmin()?'<button class="btn sm ghost" data-adj="'+esc(k)+'" title="Correct">✎</button>':''))+'</div></div>'; }
