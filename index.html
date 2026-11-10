@@ -1,0 +1,672 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<title>CPH INVENTORY</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-database-compat.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0E1116; --panel:#161A21; --panel2:#1C2129; --raised:#222936; --border:#262D38; --line:#2C3543;
+  --ink:#E6EAF0; --muted:#8A94A3; --faint:#5A6472;
+  --accent:#21C063; --ok:#21C063; --warn:#F2B14C; --err:#F0524D; --info:#4C9AF2; --sub:#A98BF5;
+  --r:14px; --r-sm:9px;
+  --mono:'JetBrains Mono',ui-monospace,Menlo,monospace; --disp:'Space Grotesk',system-ui,sans-serif; --body:'Inter',system-ui,sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box} html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.45;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+button{font-family:inherit;cursor:pointer;color:inherit} input,select,textarea{font-family:inherit;color:inherit}
+.hide{display:none!important} .mono{font-family:var(--mono)} .spacer{flex:1}
+header{position:sticky;top:0;z-index:40;display:flex;align-items:center;gap:12px;padding:10px 16px;background:rgba(14,17,22,.92);border-bottom:1px solid var(--border);backdrop-filter:blur(8px)}
+.brand{display:flex;align-items:center;gap:10px;font-family:var(--disp);font-weight:700;letter-spacing:-.01em}
+.brand small{display:block;font-family:var(--body);font-weight:500;font-size:11px;color:var(--muted);letter-spacing:.04em;text-transform:uppercase}
+.brandlogo{height:30px;width:auto;max-width:160px;object-fit:contain;display:block;mix-blend-mode:screen}
+.brandlogo.xl{height:110px;max-width:80vw;margin:0 auto}
+.dot{width:11px;height:11px;border-radius:3px;background:var(--accent);box-shadow:0 0 12px var(--accent)} .dot.big{width:16px;height:16px;border-radius:5px}
+.pill{display:inline-flex;align-items:center;gap:7px;padding:6px 11px;background:var(--panel);border:1px solid var(--border);border-radius:99px;font-size:12.5px;color:var(--muted);white-space:nowrap}
+.pill b{color:var(--ink);font-family:var(--mono);font-weight:700}
+.pill .led{width:8px;height:8px;border-radius:50%;background:var(--faint)} .pill.on .led{background:var(--ok);box-shadow:0 0 8px var(--ok)}
+.iconbtn{background:var(--panel);border:1px solid var(--border);color:var(--muted);width:38px;height:38px;border-radius:10px;font-size:16px;display:grid;place-items:center}
+.iconbtn:hover{color:var(--ink);border-color:var(--line)}
+main{max-width:1280px;margin:0 auto;padding:20px 16px 120px}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:var(--r);padding:18px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:11px 16px;border-radius:11px;border:1px solid var(--line);background:var(--panel2);color:var(--ink);font-weight:600;font-size:14px;transition:.15s;white-space:nowrap}
+.btn:hover{border-color:var(--faint)} .btn.primary{background:var(--accent);border-color:var(--accent);color:#06210F} .btn.primary:hover{filter:brightness(1.07)}
+.btn.ghost{background:transparent} .btn.danger{color:var(--err);border-color:#3a2730} .btn.danger:hover{background:#1f1417}
+.btn.warn{color:var(--warn);border-color:#5a4a1c} .btn:disabled{opacity:.4;cursor:not-allowed} .btn.sm{padding:7px 12px;font-size:13px;border-radius:9px} .btn.lg{padding:14px 22px;font-size:16px}
+.eyebrow{font-size:11.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);font-weight:600;margin-bottom:8px}
+h1{font-family:var(--disp);font-weight:700;font-size:26px;letter-spacing:-.02em;margin:0 0 6px} h2{font-family:var(--disp);font-weight:600;font-size:19px;margin:0 0 4px}
+.sub{color:var(--muted);margin:0} .mini{font-size:12.5px;color:var(--muted)} .mini b{color:var(--ink)}
+.tinput{flex:1;min-width:180px;background:var(--bg);border:1.5px solid var(--line);border-radius:11px;color:var(--ink);font-family:var(--mono);font-size:14px;padding:11px 13px;outline:none}
+.tinput:focus{border-color:var(--accent)} textarea.tinput{font-family:var(--body);min-height:70px;resize:vertical;width:100%}
+.sel{background:var(--bg);border:1.5px solid var(--line);border-radius:11px;color:var(--ink);font-family:var(--body);font-size:14px;padding:10px 12px;outline:none;min-width:160px} .sel:focus{border-color:var(--accent)}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center} .topbar{display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap}
+.namegate{position:fixed;inset:0;z-index:120;background:var(--bg);display:grid;place-items:center;padding:20px}
+.namegate .box{width:min(420px,94vw);text-align:center} .namegate .tinput{width:100%;text-align:center;font-size:18px;margin:14px 0 12px}
+.gatebrand{display:flex;flex-direction:column;align-items:center;gap:6px;margin-bottom:14px}
+.gatetitle{font-family:var(--disp);font-weight:700;font-size:24px;margin-top:4px} .gatesub{font-size:12px;color:var(--muted);letter-spacing:.04em;text-transform:uppercase}
+.menuhead{display:flex;flex-direction:column;align-items:center;text-align:center;padding:6px 0 20px}
+.menutitle{font-family:var(--disp);font-weight:700;font-size:32px;letter-spacing:.03em;margin:14px 0 5px} .menusub{color:var(--muted);font-size:12px;letter-spacing:.1em;text-transform:uppercase;margin:0}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
+.tile{display:grid;grid-template-columns:auto 1fr auto;gap:16px;align-items:center;text-align:left;position:relative;background:var(--panel);border:1px solid var(--border);border-radius:var(--r);padding:17px 18px;color:var(--ink);transition:.15s}
+.tile:hover{border-color:var(--accent);background:#11201a;transform:translateY(-2px)} .tile.dropon{border-color:var(--accent);background:#11211a;box-shadow:0 0 0 2px var(--accent)}
+.tile .micon{width:54px;height:54px;border-radius:15px;background:var(--panel2);border:1px solid var(--border);display:grid;place-items:center;font-size:27px}
+.tile .mname{font-family:var(--disp);font-weight:700;font-size:16.5px;letter-spacing:.03em} .tile .mdesc{font-size:13px;color:var(--muted);margin-top:3px}
+.tile .mgo{color:var(--faint);font-size:19px} .tile .kpi{font-family:var(--mono);font-weight:700;font-size:18px;color:var(--ink)}
+.tile .kpi small{display:block;font-family:var(--body);font-weight:500;font-size:11px;color:var(--faint)}
+.tile.wide{grid-column:1/-1}
+.badge{font-size:11px;font-weight:700;padding:3px 8px;border-radius:7px;letter-spacing:.04em} .badge.info{background:#15233a;color:var(--info)} .badge.warn{background:#2b2412;color:var(--warn)} .badge.ok{background:#13301f;color:var(--ok)} .badge.err{background:#2a1116;color:var(--err)} .badge.sub{background:#231a3a;color:var(--sub)} .badge.muted{background:var(--raised);color:var(--muted)}
+.seg{display:inline-flex;background:var(--bg);border:1px solid var(--line);border-radius:11px;padding:3px;gap:2px;flex-wrap:wrap}
+.seg button{background:none;border:none;padding:8px 13px;border-radius:8px;font-weight:600;font-size:13.5px;color:var(--muted)} .seg button.on{background:var(--raised);color:var(--ink);box-shadow:inset 0 0 0 1px var(--line)}
+.chipbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:10px 0}
+.chip{display:inline-flex;align-items:center;gap:7px;padding:7px 12px;border-radius:999px;border:1px solid var(--line);background:var(--panel);cursor:pointer;font-size:13px;font-weight:600;color:var(--ink)}
+.chip:hover{border-color:var(--accent)} .chip.on{border-color:var(--ok);background:rgba(46,160,90,.12)} .chip.dropon{border-color:var(--accent);background:#11211a;box-shadow:0 0 0 2px var(--accent)}
+.chip .n{font-size:11px;color:var(--faint);font-family:var(--mono)} .chip.sub{border-color:#3a2d5c}
+.list{display:flex;flex-direction:column;gap:9px;margin-top:12px}
+.irow{display:grid;grid-template-columns:56px 1fr auto auto;gap:14px;align-items:center;background:var(--panel);border:1px solid var(--border);border-radius:var(--r-sm);padding:10px 13px;user-select:none}
+.irow img{width:56px;height:56px;border-radius:9px;object-fit:cover;background:var(--raised);border:1px solid var(--border);cursor:zoom-in}
+.irow .nm{font-weight:600;font-size:15px;line-height:1.25} .irow .vr{font-size:12.5px;color:var(--muted);margin-top:2px}
+.irow .q{font-family:var(--mono);font-weight:700;font-size:20px;text-align:right;min-width:60px} .irow .q small{display:block;font-family:var(--body);font-size:10.5px;color:var(--faint);font-weight:500}
+.irow .q.neg{color:var(--err)} .irow .q.res{color:var(--warn)}
+.irow.drag{opacity:.5} .irow .grip{color:var(--faint);cursor:grab;font-size:16px;padding:0 4px}
+.irow .acts{display:flex;gap:6px}
+.dragghost{position:fixed;z-index:400;pointer-events:none;padding:8px 12px;border-radius:10px;background:var(--accent);color:#06210F;font-weight:700;font-size:13px;box-shadow:0 12px 30px -10px #000;transform:translate(12px,12px);white-space:nowrap}
+.dragghost.none{background:var(--raised);color:var(--muted)}
+body.dragging,body.dragging *{cursor:grabbing!important}
+table{width:100%;border-collapse:collapse;font-size:13.5px} th,td{text-align:left;padding:9px 11px;border-bottom:1px solid var(--border);vertical-align:middle;white-space:nowrap}
+th{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600;position:sticky;top:0;background:var(--panel2);z-index:1}
+td.num,th.num{text-align:right;font-family:var(--mono)} td.name{white-space:normal;min-width:200px}
+.tscroll{max-height:66vh;overflow:auto;border:1px solid var(--border);border-radius:var(--r);background:var(--panel);margin-top:12px}
+tr.bad td{background:#1c1316} tr.bad .d{color:var(--err);font-weight:700} tr.good .d{color:var(--ok)} tr.miss td{background:#1a1710} tr.miss .d{color:var(--warn)}
+.empty{text-align:center;color:var(--muted);padding:34px 20px;border:1px dashed var(--line);border-radius:var(--r)}
+.kvs{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin:8px 0 14px}
+.kv{background:var(--panel2);border:1px solid var(--border);border-radius:var(--r-sm);padding:12px 14px} .kv .n{font-family:var(--mono);font-weight:700;font-size:24px} .kv .l{font-size:12px;color:var(--muted);margin-top:2px}
+.kv.ok .n{color:var(--ok)} .kv.warn .n{color:var(--warn)} .kv.err .n{color:var(--err)} .kv.info .n{color:var(--info)}
+.note{background:var(--panel2);border:1px solid var(--border);border-left:3px solid var(--warn);border-radius:var(--r-sm);padding:11px 14px;font-size:13.5px;color:var(--muted);margin-top:12px} .note b{color:var(--ink)} .note.info{border-left-color:var(--info)} .note.err{border-left-color:var(--err)} .note.ok{border-left-color:var(--accent)}
+.modal{position:fixed;inset:0;z-index:220;background:rgba(4,6,10,.84);display:grid;place-items:center;padding:18px}
+.mbox{width:min(560px,96vw);max-height:88vh;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:20px} .mbox.wide{width:min(820px,96vw)}
+.fld{display:flex;flex-direction:column;gap:6px;margin-top:12px} .fld label{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);font-weight:700} .fld .tinput,.fld .sel{width:100%}
+.bigqty{width:100%;text-align:center;background:var(--bg);border:1.5px solid var(--line);border-radius:12px;color:var(--ink);font-family:var(--mono);font-weight:700;font-size:34px;padding:12px;outline:none;margin:6px 0 4px} .bigqty:focus{border-color:var(--accent)}
+.route{display:flex;align-items:center;gap:10px;font-family:var(--mono);font-weight:700;font-size:16px;margin-top:12px;flex-wrap:wrap} .route span{background:var(--raised);border:1px solid var(--line);border-radius:9px;padding:6px 11px} .route i{color:var(--accent);font-style:normal}
+.pcard{display:flex;gap:14px;align-items:center;background:var(--panel2);border:1px solid var(--border);border-radius:var(--r-sm);padding:12px;margin:12px 0}
+.pcard img{width:84px;height:84px;border-radius:11px;object-fit:cover;background:var(--raised);border:1px solid var(--border)} .pcard .cn{font-family:var(--disp);font-weight:600;font-size:18px;line-height:1.2} .pcard .cv{font-size:13px;color:var(--muted);margin-top:3px}
+.mlist{display:flex;flex-direction:column;gap:7px;max-height:50vh;overflow:auto;margin-top:12px;padding-right:4px}
+.mpick{display:grid;grid-template-columns:44px 1fr auto;gap:11px;align-items:center;text-align:left;background:var(--panel2);border:1px solid var(--border);border-radius:var(--r-sm);padding:8px 10px;color:var(--ink)} .mpick:hover{border-color:var(--accent);background:#11211a}
+.mpick img{width:44px;height:44px;border-radius:8px;object-fit:cover;background:var(--raised)} .mpick .pn{font-weight:600;font-size:14px;line-height:1.2} .mpick .pv{font-size:11.5px;color:var(--muted);font-family:var(--mono)} .mpick .pt{font-size:12px;color:var(--faint);font-family:var(--mono);text-align:right} .mpick .pt.here{color:var(--accent)}
+.scanwrap{border-radius:var(--r);border:1px solid var(--border);background:var(--panel);overflow:hidden;margin-bottom:12px}
+.scanhead{display:flex;align-items:center;gap:10px;padding:8px 16px;border-bottom:1px solid var(--border);background:var(--panel2)}
+.mode{font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;font-weight:700;padding:4px 9px;border-radius:7px;color:var(--warn);background:#2a2113} .mode.label{color:var(--info);background:#15233a}
+.scanrow{display:flex;align-items:center;gap:10px;padding:12px 16px;flex-wrap:wrap} .scanrow input{flex:1;min-width:200px;background:var(--bg);border:1.5px solid var(--line);border-radius:11px;color:var(--ink);font-family:var(--mono);font-weight:700;font-size:17px;padding:12px 14px;outline:none} .scanrow input:focus{border-color:var(--accent)}
+.sugg{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:30;background:var(--raised);border:1px solid var(--line);border-radius:12px;box-shadow:0 20px 50px -16px #000;max-height:50vh;overflow:auto;padding:5px}
+.qi{width:76px;text-align:center;background:var(--bg);border:1.5px solid var(--line);border-radius:9px;color:var(--ink);font-family:var(--mono);font-weight:700;font-size:16px;padding:8px 2px;outline:none} .qi:focus{border-color:var(--accent)} .qi.diff{border-color:var(--err);color:var(--err)} .qi.same{border-color:var(--ok)}
+.logrow{display:grid;grid-template-columns:120px 1fr auto;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);font-size:13.5px;align-items:center} .logrow .lt{font-family:var(--mono);font-size:12px;color:var(--faint)} .logrow .lq{font-family:var(--mono);font-weight:700}
+.k-transfer{color:var(--info)} .k-sale{color:var(--ok)} .k-adjust{color:var(--warn)} .k-sub{color:var(--sub)} .k-recv{color:var(--accent)}
+.lightbox{position:fixed;inset:0;z-index:300;background:rgba(4,6,10,.86);display:grid;place-items:center;padding:20px;cursor:zoom-out} .lightbox img{width:500px;height:500px;max-width:92vw;max-height:82vh;object-fit:contain;background:#0e1116;border:1px solid var(--border);border-radius:14px}
+#toasts{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:390;display:flex;flex-direction:column;gap:9px;width:min(520px,92vw)}
+.toast{display:flex;align-items:center;gap:11px;padding:12px 15px;border-radius:12px;background:var(--panel2);border:1px solid var(--border);box-shadow:0 16px 40px -16px #000;animation:tin .2s;font-size:14px}
+.toast .ic{width:24px;height:24px;border-radius:7px;display:grid;place-items:center;font-weight:700} .toast.ok .ic{background:#13301f;color:var(--ok)} .toast.err .ic{background:#311518;color:var(--err)} .toast.warn .ic{background:#2b2412;color:var(--warn)} .toast.info .ic{background:#152338;color:var(--info)}
+@keyframes tin{from{transform:translateY(10px);opacity:0}}
+.cammodal{position:fixed;inset:0;z-index:250;background:#05070b;display:flex;flex-direction:column} .camhead{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--border);background:var(--panel)} .camstage{position:relative;flex:1;display:grid;place-items:center;overflow:hidden;background:#000} #camView{width:100%;height:100%} #camView video{width:100%!important;height:100%!important;object-fit:cover!important}
+.subcard{background:var(--panel);border:1px solid #3a2d5c;border-radius:var(--r);padding:14px 16px;margin-top:10px} .subcard .sh{display:flex;align-items:center;gap:10px;flex-wrap:wrap} .subcard .sn{font-family:var(--disp);font-weight:700;font-size:17px;color:var(--sub)}
+.daybar{display:flex;gap:8px;align-items:center;flex-wrap:wrap} .daybar input[type=date]{background:var(--bg);border:1.5px solid var(--line);border-radius:10px;color:var(--ink);padding:8px 10px;font:inherit;color-scheme:dark}
+@media (max-width:640px){ .irow{grid-template-columns:48px 1fr auto} .irow .acts{grid-column:1/-1;justify-content:flex-end} .irow img{width:48px;height:48px} .tiles{grid-template-columns:1fr} }
+</style>
+</head>
+<body>
+
+<div class="namegate" id="namegate">
+  <div class="box">
+    <div class="gatebrand"><img class="brandlogo xl hide" id="logoGate" alt=""><span class="dot big" id="dotGate"></span>
+      <div class="gatetitle">CPH INVENTORY</div><div class="gatesub" id="gateSub">Calipokehouse · stock by location</div></div>
+    <h1>Enter your name</h1>
+    <p class="sub" id="gateHint">Your name goes on every movement you make.</p>
+    <input id="nameInput" class="tinput" autocomplete="off" placeholder="e.g. Joe" maxlength="24">
+    <input id="pinInput" class="tinput hide" type="password" inputmode="numeric" autocomplete="off" placeholder="PIN">
+    <button class="btn primary lg" id="enterBtn" style="width:100%">Continue</button>
+  </div>
+</div>
+
+<header class="hide" id="appHeader">
+  <div class="brand"><img class="brandlogo hide" id="logoHeader" alt=""><span class="dot" id="dotHeader"></span><div>CPH INVENTORY<small id="meName">—</small></div></div>
+  <div class="spacer"></div>
+  <span class="pill" id="dbPill"><span class="led"></span><span id="dbTxt">connecting…</span></span>
+  <span class="pill" title="Products in the catalog">📦 <b id="catCount">0</b></span>
+  <span class="pill" id="buildTag" style="font-size:11px;color:var(--faint)">v—</span>
+  <button class="iconbtn" id="homeBtn" title="Locations">▤</button>
+  <button class="iconbtn" id="logoutBtn" title="Change user">⇆</button>
+</header>
+
+<main class="hide" id="appMain">
+  <section id="screen-menu" class="hide">
+    <div class="menuhead"><img class="brandlogo xl hide" id="logoMenu" alt=""><span class="dot big" id="dotMenu"></span>
+      <h1 class="menutitle">CPH INVENTORY</h1><p class="menusub" id="menuWho">—</p></div>
+    <div class="row" style="margin-bottom:14px;justify-content:center">
+      <button class="btn" id="mOverview">📊 All locations</button>
+      <button class="btn" id="mDisc">⚖ Discrepancies <span class="badge err hide" id="mDiscN">0</span></button>
+      <button class="btn" id="mHistory">🕘 History</button>
+      <button class="btn primary" id="mGame" title="Streaming Game builder — next build">🎲 Plan a game</button>
+      <button class="btn ghost" id="mReload" title="Re-read the inventory sheet">⟳ Catalog</button>
+    </div>
+    <div class="tiles" id="tiles"></div>
+    <div id="menuNotes"></div>
+  </section>
+
+  <section id="screen-loc" class="hide">
+    <div class="topbar"><button class="btn ghost" id="lcBack">← Locations</button><h1 style="margin:0" id="lcTitle">—</h1><div class="spacer"></div>
+      <div class="pill">Items <b id="lcItems">0</b> · units <b id="lcUnits">0</b></div>
+      <button class="btn sm" id="lcCount">🔢 Count</button><button class="btn sm" id="lcNewSub">＋ Sub-location</button></div>
+    <div class="chipbar" id="lcDrop"></div>
+    <div class="seg" id="lcTabs" style="margin-bottom:12px"><button data-t="stock" class="on">📦 Stock</button><button data-t="subs">🧺 Sub-locations</button><button data-t="days">🗓 Days</button><button data-t="log">🕘 Movements</button></div>
+    <div id="lcBody"></div>
+  </section>
+
+  <section id="screen-overview" class="hide">
+    <div class="topbar"><button class="btn ghost" id="ovBack">← Locations</button><h1 style="margin:0">📊 All locations</h1><div class="spacer"></div>
+      <div class="daybar"><span class="mini">Day</span><input type="date" id="ovDate"><button class="btn sm" id="ovToday">Today</button></div>
+      <button class="btn sm" id="ovCsv">⬇ CSV</button></div>
+    <div class="row"><input id="ovQ" class="tinput" style="max-width:360px" placeholder="Find an item…" autocomplete="off"><label class="mini" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="ovZero"> show items that are 0 everywhere</label></div>
+    <div class="tscroll"><table id="ovTbl"></table></div>
+    <p class="mini" style="margin-top:10px">Columns = locations (sub-locations inside each location are included in its figure). Pick an earlier day to see the closing stock of that day.</p>
+  </section>
+
+  <section id="screen-disc" class="hide">
+    <div class="topbar"><button class="btn ghost" id="dcBack">← Locations</button><h1 style="margin:0">⚖ Discrepancies</h1><div class="spacer"></div><button class="btn sm" id="dcUpd">↻ Daily SOH</button><button class="btn sm" id="dcCsv">⬇ CSV</button></div>
+    <div class="seg" id="dcTabs" style="margin-bottom:12px"><button data-t="open" class="on">⚠ Open from counts</button><button data-t="soh">📄 vs Daily SOH</button></div>
+    <div id="dcBody"></div>
+  </section>
+
+  <section id="screen-history" class="hide">
+    <div class="topbar"><button class="btn ghost" id="hsBack">← Locations</button><h1 style="margin:0">🕘 History</h1><div class="spacer"></div><button class="btn sm" id="hsCsv">⬇ CSV</button></div>
+    <div class="row"><input id="hsQ" class="tinput" style="max-width:420px" placeholder="Filter by item, location, person…" autocomplete="off"><select id="hsKind" class="sel"><option value="">All kinds</option><option value="transfer">Transfers</option><option value="recv">Receivings</option><option value="adjust">Corrections</option><option value="sub">Sub-locations</option><option value="sale">Sales</option></select><span class="mini" id="hsInfo"></span></div>
+    <div class="card" id="hsBody" style="margin-top:12px"></div>
+  </section>
+</main>
+
+<div id="lightbox" class="lightbox hide"><img id="lightboxImg" src="" alt=""></div>
+<div id="cam" class="cammodal hide"><div class="camhead"><span class="mini">📷 <b>Camera scan</b></span><div class="spacer"></div><button class="btn ghost sm" id="camClose">✕ Close</button></div><div class="camstage"><div id="camView"></div></div></div>
+<div id="modalHost"></div><div id="toasts"></div>
+
+<script>
+"use strict";
+/* ============================================================
+   CPH INVENTORY — stock by location, built on a movement ledger
+   ------------------------------------------------------------
+   Own project: calipoke-inventory  (root node  inv/)
+     catalog/{ikey}             product (mirrored from the inventory sheet)
+     balances/{loc}/{ikey}      qty — main stock of a location
+     subs/{subId}               sub-location (game / show): {name, kind, at, status, items{ikey:qty}, start{}, sold{}}
+     ledger/{id}                {ts, day, item, name, qty, from, to, kind, by, note, src, srcId}
+                                from/to = locId | 'sub:ID' | null (null = adjustment / sold)
+     counts/{loc}/{id}          a physical count: {at, by, lines{ikey:{exp,cnt}}, applied}
+     discrepancies/{id}         {at, loc, item, name, exp, cnt, by, status:'open'|'fixed', note}
+     ingest/transfers/{id}      transfers of the packstation project already posted here
+     boxes/{ikey}               open-box settings (build 2)
+   Read-only from calipoke-packstation:
+     packstation/stockCount/counts   → Warehouse stock (every location but STORE)
+     packstation/transfers           → ready transfers become ledger events
+   Day boundaries: calendar days (local time). Streamer rooms: day = day shift + night shift (build 3).
+   ============================================================ */
+const BUILD='2026-11-10a · core';
+const INV_CONFIG={apiKey:"AIzaSyAsTYwU0qABmXKuYSpyendwHw3djJc-Bqo",authDomain:"calipoke-inventory.firebaseapp.com",databaseURL:"https://calipoke-inventory-default-rtdb.firebaseio.com",projectId:"calipoke-inventory",storageBucket:"calipoke-inventory.firebasestorage.app",messagingSenderId:"156640764541",appId:"1:156640764541:web:833f96e4b0849b53454714"};
+const STATION_CONFIG={apiKey:"AIzaSyB2I2sR9czF6F29OZMyEZubmwQGP7nWFlc",authDomain:"calipoke-packstation.firebaseapp.com",databaseURL:"https://calipoke-packstation-default-rtdb.firebaseio.com",projectId:"calipoke-packstation",storageBucket:"calipoke-packstation.firebasestorage.app",messagingSenderId:"125288117157",appId:"1:125288117157:web:461b4d553e100c07b9ae4c"};
+const ROOT='inv', STATION_PATH='packstation';
+const INVENTORY_SHEET_URL='https://docs.google.com/spreadsheets/d/13vYpuca93GKyRDcQJA3R6DFoP-MrAm_idEnBNgpKpTw/edit?usp=sharing';
+const WAREHOUSE_PLAN_URL='https://r-alib.github.io/calipoke-station/warehouse-plan.html';   // TODO: real address of warehouse-plan.html
+const TRANSFER_APP_URL='https://r-alib.github.io/calipoke-transfer/';
+const LOGO_URL='https://i.postimg.cc/VkfXDqWf/images.jpg';
+const INV_CACHE_MS=20*60*1000;
+const ELEVATED=['admin','celina'], ELEVATED_PIN='0515';
+/* locations — order = tile order */
+const LOCS=[
+  {id:'warehouse',  name:'Warehouse',       icon:'🏭', kind:'warehouse', desc:'Arcadia warehouse · read from the inventory count'},
+  {id:'stockroom',  name:'Stockroom',       icon:'🗄️', kind:'room',      desc:'Main store of goods for the rooms and games'},
+  {id:'tiktok1',    name:'TikTok 1',        icon:'📱', kind:'stream',    desc:'Main TikTok channel room'},
+  {id:'ebay',       name:'Ebay',            icon:'🛒', kind:'stream',    desc:'Ebay live room'},
+  {id:'whatnot',    name:'WhatNot',         icon:'🎥', kind:'stream',    desc:'WhatNot live room'},
+  {id:'singleslab', name:'Slab & Single',   icon:'🃏', kind:'room',      desc:'Slabs and singles prep room'},
+  {id:'cardshow',   name:'Card Show',       icon:'🚐', kind:'show',      desc:'Stock out at shows · one sub-location per show'}
+];
+const LOC_BY_ID=Object.fromEntries(LOCS.map(l=>[l.id,l]));
+/* names used by the Transfer Request app → location id */
+const LOC_ALIAS={'warehouse':'warehouse','stockroom':'stockroom','tiktok 1':'tiktok1','ebay':'ebay','what not':'whatnot','whatnot':'whatnot','single & slab':'singleslab','slab & single':'singleslab','streaming game':'stockroom','card show':'cardshow'};
+const ROOM_LOCS=LOCS.filter(l=>l.id!=='warehouse').map(l=>l.id);   // everything that adds up to LS EOD SOH
+
+/* ---------- helpers ---------- */
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+const norm=v=>(v==null?'':String(v)).trim().toLowerCase().replace(/\s+/g,' ');
+const clean=v=>(v==null?'':String(v)).toLowerCase().replace(/[^a-z0-9]/g,'');
+const keyOf=(n,va)=>norm(n)+'||'+norm(va);
+const fbKey=k=>String(k).replace(/[.#$\/\[\]]/g,'_');
+const barcodesOf=s=>(s==null?'':String(s)).split(/[,;\n]+/).map(x=>norm(x)).filter(Boolean);
+const esc=s=>(s==null?'':String(s)).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const int=v=>{ const n=parseInt(v,10); return isFinite(n)?n:0; };
+const fmt=n=>Number(n||0).toLocaleString('en-US');
+const pad2=n=>String(n).padStart(2,'0');
+const dayOf=ts=>{ const d=new Date(ts); return d.getFullYear()+'-'+pad2(d.getMonth()+1)+'-'+pad2(d.getDate()); };
+const dayStart=day=>new Date(day+'T00:00:00').getTime(), dayEnd=day=>dayStart(day)+86400000;
+const fmtTime=ts=>{ if(!ts) return '—'; const d=new Date(ts); return pad2(d.getMonth()+1)+'/'+pad2(d.getDate())+' '+pad2(d.getHours())+':'+pad2(d.getMinutes()); };
+const varOf=v=>(v&&norm(v)!=='default')?v:'';
+const PLACEHOLDER='data:image/svg+xml;utf8,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" rx="10" fill="#222936"/><text x="32" y="40" font-size="24" text-anchor="middle" fill="#5A6472">📦</text></svg>');
+const img=(src,cls)=>'<img class="'+(cls||'')+'" src="'+esc(src||PLACEHOLDER)+'" loading="lazy" alt="" onerror="this.src=\''+PLACEHOLDER+'\'">';
+const locName=id=>{ if(!id) return '—'; if(id.startsWith('sub:')){ const s=SUBS[id.slice(4)]; return s?('🧺 '+s.name):'sub'; } return (LOC_BY_ID[id]||{}).name||id; };
+const isSub=id=>!!id&&id.startsWith('sub:');
+const subOf=id=>SUBS[String(id||'').slice(4)]||null;
+
+/* ---------- state ---------- */
+let MY_NAME='', MY_ROLE='staff', db=null, R=null, SDB=null, DB_ON=false;
+let INV={}, BC={};            // catalog by ikey; barcode -> [ikey]
+let BAL={};                   // loc -> ikey -> qty
+let SUBS={};                  // subId -> sub
+let LEDGER=[];                // sorted by ts asc
+let DISC={};                  // id -> discrepancy
+let COUNTS={};                // loc -> id -> count
+let WH={};                    // ikey -> qty (warehouse from packstation)
+let WH_RAW={}, WH_BASE=null;  // packstation stockCount counts / base
+let STR={};                   // packstation transfers
+let DSOH=null, DSOH_ERR='';
+let screen='menu', curLoc=null, lcTab='stock', lcQ='', dcTab='open', ovDay=dayOf(Date.now());
+let actx=null;
+
+/* ---------- ui helpers ---------- */
+function beep(kind){ try{ actx=actx||new (window.AudioContext||window.webkitAudioContext)(); const o=actx.createOscillator(),g=actx.createGain(); o.connect(g); g.connect(actx.destination); const f={ok:[880,1320],err:[200,150],warn:[440,440]}[kind]||[600]; o.frequency.value=f[0]; if(f[1]) o.frequency.setValueAtTime(f[1],actx.currentTime+0.08); g.gain.setValueAtTime(0.0001,actx.currentTime); g.gain.exponentialRampToValueAtTime(0.18,actx.currentTime+0.01); g.gain.exponentialRampToValueAtTime(0.0001,actx.currentTime+0.18); o.start(); o.stop(actx.currentTime+0.2); }catch(e){} }
+function toast(msg,kind='info',ms=2800){ const ic={ok:'✓',err:'✕',warn:'!',info:'i'}; const el=document.createElement('div'); el.className='toast '+kind; el.innerHTML='<span class="ic">'+ic[kind]+'</span><span>'+esc(msg)+'</span>'; $('#toasts').appendChild(el); setTimeout(()=>{ el.style.transition='.25s'; el.style.opacity='0'; setTimeout(()=>el.remove(),250); },ms); }
+let _modal=null; function closeModal(){ if(_modal){ _modal.remove(); _modal=null; } }
+function modal(html,wide){ closeModal(); const d=document.createElement('div'); d.className='modal'; d.innerHTML='<div class="mbox'+(wide?' wide':'')+'">'+html+'</div>'; document.body.appendChild(d); d.addEventListener('click',e=>{ if(e.target===d) closeModal(); }); _modal=d; return d; }
+document.addEventListener('click',e=>{ const t=e.target; if(t&&t.tagName==='IMG'&&t.closest('.irow,.pcard,.mpick')){ $('#lightboxImg').src=t.src; $('#lightbox').classList.remove('hide'); } });
+$('#lightbox').onclick=()=>$('#lightbox').classList.add('hide');
+document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ $('#lightbox').classList.add('hide'); if(_modal) closeModal(); else if(!$('#cam').classList.contains('hide')) closeCam(); } });
+function applyLogo(){ [['logoHeader','dotHeader'],['logoGate','dotGate'],['logoMenu','dotMenu']].forEach(([a,b])=>{ const i=$('#'+a),d=$('#'+b); if(!i||!LOGO_URL) return; i.src=LOGO_URL; i.classList.remove('hide'); d.classList.add('hide'); i.onerror=()=>{ i.classList.add('hide'); d.classList.remove('hide'); }; }); }
+function show(s){ screen=s; ['menu','loc','overview','disc','history'].forEach(x=>$('#screen-'+x).classList.toggle('hide',x!==s)); closeModal(); window.scrollTo({top:0}); }
+const isAdmin=()=>MY_ROLE==='admin';
+
+/* ============================================================
+   CATALOG (inventory sheet → cached; same reader as the Transfer app)
+   ============================================================ */
+const COL={name:['item name','item','name','product','title'],variation:['variation','variant'],barcode:['barcode','sku','upc','ean'],image:['image','img','photo','picture','url'],type:['type','category','kind'],brand:['brand','make','manufacturer'],series:['series','collection','line'],qty:['quantity','qty','count']};
+function pickCol(h,kind){ const hs=h.map(norm); for(const w of COL[kind]){ const i=hs.indexOf(w); if(i>=0) return i; } for(let i=0;i<hs.length;i++) if(COL[kind].some(w=>hs[i].includes(w))) return i; return -1; }
+async function fetchSheet(url){ const m=String(url).match(/\/spreadsheets\/d\/([A-Za-z0-9-_]+)/); const res=await fetch('https://docs.google.com/spreadsheets/d/'+m[1]+'/export?format=xlsx',{redirect:'follow',cache:'no-store',credentials:'omit'}); if(!res.ok) throw new Error('http '+res.status); const buf=new Uint8Array(await res.arrayBuffer()); if(!(buf[0]===0x50&&buf[1]===0x4B)) throw new Error('No access to the sheet'); return buf; }
+function parseInventory(buf){
+  const wb=XLSX.read(buf,{type:'array'}); const name=wb.SheetNames.find(n=>['inventory','stock','catalog'].includes(norm(n)))||wb.SheetNames[0];
+  const rows=XLSX.utils.sheet_to_json(wb.Sheets[name],{header:1,raw:false,defval:''}); const h=rows[0]; const ci={}; for(const k in COL) ci[k]=pickCol(h,k);
+  const map={}; for(let r=1;r<rows.length;r++){ const row=rows[r]; const nm=String(row[ci.name]??'').trim(); if(!nm) continue; const va=ci.variation>=0?String(row[ci.variation]??'').trim():''; const k=keyOf(nm,va); if(map[k]) continue;
+    map[k]={ikey:k,name:nm,variation:va,barcode:ci.barcode>=0?String(row[ci.barcode]??'').trim():'',image:ci.image>=0?String(row[ci.image]??'').trim():'',type:ci.type>=0?String(row[ci.type]??'').trim():'',brand:ci.brand>=0?String(row[ci.brand]??'').trim():'',series:ci.series>=0?String(row[ci.series]??'').trim():'',packQty:ci.qty>=0?Math.max(1,int(row[ci.qty])||1):1}; }
+  return map;
+}
+function setInventory(map){ INV=map; BC={}; for(const k in INV) for(const b of barcodesOf(INV[k].barcode)){ (BC[b]=BC[b]||[]); if(!BC[b].includes(k)) BC[b].push(k); } $('#catCount').textContent=Object.keys(INV).length; renderCurrent(); }
+async function loadInventory(force){
+  if(!force){ try{ const c=JSON.parse(localStorage.getItem('cph.inv.v1')||'null'); if(c&&c.map&&Date.now()-c.at<INV_CACHE_MS){ setInventory(c.map); return; } }catch(e){} }
+  try{ const map=parseInventory(await fetchSheet(INVENTORY_SHEET_URL)); try{ localStorage.setItem('cph.inv.v1',JSON.stringify({at:Date.now(),map})); }catch(e){} setInventory(map); if(force) toast('Catalog refreshed · '+Object.keys(map).length+' products','ok'); }
+  catch(e){ toast('Inventory sheet unavailable: '+(e.message||e),'warn',4000); try{ const c=JSON.parse(localStorage.getItem('cph.inv.v1')||'null'); if(c&&c.map) setInventory(c.map); }catch(_){} }
+}
+/* an item we only know from a movement (not in the sheet) still gets a name */
+function itemInfo(k){ if(INV[k]) return INV[k]; const ev=LEDGER.find(e=>e.item===k); const [n,v]=String(k).split('||'); return {ikey:k,name:(ev&&ev.name)||n||k,variation:varOf(v||''),image:'',barcode:''}; }
+function searchProducts(q,limit){ const nq=norm(q), nc=clean(q); if(!nq) return []; const out=[]; const bk=BC[nq]||[]; bk.forEach(k=>out.push(INV[k]));
+  for(const k in INV){ const v=INV[k]; if(bk.includes(k)) continue; if(norm(v.name).includes(nq)||norm(v.variation).includes(nq)||(nc.length>=5&&barcodesOf(v.barcode).some(b=>b.includes(nc)))) out.push(v); if(out.length>(limit||40)) break; }
+  return out; }
+
+/* ============================================================
+   FIREBASE
+   ============================================================ */
+function setDb(on,txt){ DB_ON=on; $('#dbPill').classList.toggle('on',on); $('#dbTxt').textContent=txt; }
+function connect(){
+  const app=firebase.initializeApp(INV_CONFIG); db=firebase.database(app); R=db.ref(ROOT);
+  const sapp=firebase.initializeApp(STATION_CONFIG,'station'); SDB=firebase.database(sapp);
+  db.ref('.info/connected').on('value',s=>setDb(!!s.val(),s.val()?'live':'reconnecting…'));
+  R.child('presence/'+Math.random().toString(36).slice(2,8)).set({name:MY_NAME,at:Date.now()}).catch(()=>{});
+  R.child('balances').on('value',s=>{ BAL=s.val()||{}; renderCurrent(); });
+  R.child('subs').on('value',s=>{ SUBS=s.val()||{}; renderCurrent(); });
+  R.child('ledger').orderByChild('ts').limitToLast(6000).on('value',s=>{ const a=[]; s.forEach(c=>{ const v=c.val(); if(v){ v.id=c.key; a.push(v); } }); LEDGER=a.sort((x,y)=>(x.ts||0)-(y.ts||0)); renderCurrent(); });
+  R.child('discrepancies').on('value',s=>{ DISC=s.val()||{}; renderCurrent(); });
+  R.child('counts').on('value',s=>{ COUNTS=s.val()||{}; renderCurrent(); });
+  /* Warehouse = the live inventory count of the station, every location except STORE */
+  SDB.ref(STATION_PATH+'/stockCount/base').on('value',s=>{ WH_BASE=s.val()||null; rebuildWH(); });
+  SDB.ref(STATION_PATH+'/stockCount/counts').on('value',s=>{ WH_RAW=s.val()||{}; rebuildWH(); });
+  /* Transfer Request app: every ready transfer with a destination becomes ledger events (once) */
+  SDB.ref(STATION_PATH+'/transfers').on('value',s=>{ STR=s.val()||{}; ingestTransfers(); });
+  loadInventory(false); refreshDSOH(false);
+}
+function qPerCase(k){ const it=WH_BASE&&WH_BASE.items&&WH_BASE.items[k]; return it&&it.q>0?+it.q:1; }
+function rebuildWH(){
+  const m={};
+  for(const L in WH_RAW){ if(L==='STORE') continue; const c=WH_RAW[L]||{}; for(const k in c){ const v=c[k]; if(!v||typeof v!=='object') continue; const u=(v.s||0)*qPerCase(k)+(v.b||0)+(v.c||0)+(v.d||0); const nm=v.n||(WH_BASE&&WH_BASE.items&&WH_BASE.items[k]&&WH_BASE.items[k].n)||k;
+    /* the station keys by cleaned name; match to the catalog by name (no variation), else keep the name */
+    const ik=whKeyToIkey(nm); m[ik]=(m[ik]||0)+u; } }
+  WH=m; renderCurrent();
+}
+let _nameIdx=null, _nameIdxN=0;
+function whKeyToIkey(name){ if(!_nameIdx||_nameIdxN!==Object.keys(INV).length){ _nameIdx={}; _nameIdxN=Object.keys(INV).length; for(const k in INV){ const c=clean(INV[k].name); if(!_nameIdx[c]||!varOf(INV[k].variation)) _nameIdx[c]=k; } } return _nameIdx[clean(name)]||keyOf(name,''); }
+
+/* ============================================================
+   LEDGER — the only way stock changes
+   ============================================================ */
+function balAt(loc,k){ if(loc==='warehouse') return WH[k]||0; if(isSub(loc)){ const s=subOf(loc); return s&&s.items?(+s.items[k]||0):0; } return +((BAL[loc]||{})[k]||0); }
+function balPath(loc,k){ return isSub(loc)?('subs/'+loc.slice(4)+'/items/'+fbKey(k)):('balances/'+loc+'/'+fbKey(k)); }
+async function bump(loc,k,delta){ if(!loc||loc==='warehouse'||!delta) return; await R.child(balPath(loc,k)).transaction(c=>{ const v=(+c||0)+delta; return v===0?null:v; }); }
+/* ev: {item, name, qty, from, to, kind, note, ts?, src?, srcId?, key?} */
+async function postEvent(ev){
+  const ts=ev.ts||Date.now(); const key=ev.key||null;
+  const rec={ts, day:dayOf(ts), item:ev.item, name:ev.name||itemInfo(ev.item).name, qty:+ev.qty, from:ev.from||null, to:ev.to||null, kind:ev.kind||'transfer', by:ev.by||MY_NAME, note:ev.note||'', src:ev.src||'page', srcId:ev.srcId||null, at:Date.now()};
+  Object.keys(rec).forEach(x=>{ if(rec[x]==null||rec[x]==='') delete rec[x]; });
+  if(key){ const r=await R.child('ledger/'+key).transaction(c=>c?undefined:rec); if(!r.committed) return false; }
+  else await R.child('ledger').push(rec);
+  if(rec.from) await bump(rec.from,rec.item,-rec.qty);
+  if(rec.to) await bump(rec.to,rec.item,+rec.qty);
+  return true;
+}
+/* ---- packstation transfers → ledger ---- */
+let ingestBusy=false;
+async function ingestTransfers(){
+  if(ingestBusy||!R) return; ingestBusy=true;
+  try{
+    for(const id in STR){ const t=STR[id]; if(!t||String(t.status||'').toLowerCase()!=='ready'||!t.to) continue;
+      const claim=await R.child('ingest/transfers/'+fbKey(id)).transaction(c=>c?undefined:{at:Date.now(),by:MY_NAME,ts:+t.preparedAt||Date.now()});
+      if(!claim.committed) continue;
+      const to=LOC_ALIAS[norm(t.to)]; const items=Array.isArray(t.items)?t.items:Object.values(t.items||{}); let n=0;
+      for(let i=0;i<items.length;i++){ const ln=items[i]; const qty=+(ln.qtyPrepared!=null?ln.qtyPrepared:(ln.qtyApproved!=null?ln.qtyApproved:ln.qty))||0; const from=LOC_ALIAS[norm(ln.from)]; if(!qty||!to) continue;
+        const ik=ln.ikey||keyOf(ln.name,ln.variation||'');
+        await postEvent({key:'tr_'+fbKey(id)+'_'+i, item:ik, name:ln.name+(varOf(ln.variation)?' · '+ln.variation:''), qty, from:from||null, to, kind:'transfer', ts:+t.preparedAt||Date.now(), by:t.preparedBy||'transfer', src:'transfer-app', srcId:id, note:t.note||''}); n++; }
+      if(n) toast('Transfer '+id+' posted · '+n+' line(s) → '+locName(to),'info',3200);
+    }
+  }catch(e){ console.warn('ingest',e); }
+  ingestBusy=false;
+}
+
+/* ---- derived views ---- */
+function itemsAt(loc){ const m={}; if(loc==='warehouse'){ for(const k in WH) if(WH[k]) m[k]=WH[k]; return m; } if(isSub(loc)){ const s=subOf(loc); return Object.assign({},(s&&s.items)||{}); } return Object.assign({},BAL[loc]||{}); }
+function subsAt(loc){ return Object.keys(SUBS).filter(id=>SUBS[id].at===loc&&SUBS[id].status!=='closed').map(id=>Object.assign({id},SUBS[id])); }
+/* main + every open sub-location that is in this location */
+function totalsAt(loc){ const m=itemsAt(loc); subsAt(loc).forEach(s=>{ for(const k in (s.items||{})) m[k]=(m[k]||0)+(+s.items[k]||0); }); return m; }
+function reservedAt(loc){ /* approved, not yet ready transfers that take from this location */ const m={}; const nm=(LOC_BY_ID[loc]||{}).name; for(const id in STR){ const t=STR[id]; if(!t||t.status!=='approved') continue; const items=Array.isArray(t.items)?t.items:Object.values(t.items||{}); items.forEach(ln=>{ const f=ln.from||''; if(norm(f)===norm(nm)||(!f&&loc==='stockroom')){ const ik=ln.ikey||keyOf(ln.name,ln.variation||''); m[ik]=(m[ik]||0)+(+(ln.qtyApproved!=null?ln.qtyApproved:ln.qty)||0); } }); } return m; }
+/* balance of a location at a moment in time = now − everything that happened after */
+function balancesAtTime(loc,ts){ const m=totalsAt(loc); const subIds=new Set(subsAt(loc).map(s=>'sub:'+s.id));
+  for(let i=LEDGER.length-1;i>=0;i--){ const e=LEDGER[i]; if((e.ts||0)<=ts) break; const inFrom=e.from===loc||subIds.has(e.from), inTo=e.to===loc||subIds.has(e.to); if(inFrom&&!inTo) m[e.item]=(m[e.item]||0)+e.qty; if(inTo&&!inFrom) m[e.item]=(m[e.item]||0)-e.qty; }
+  for(const k in m) if(!m[k]) delete m[k]; return m; }
+function eventsFor(loc,from,to){ const subIds=new Set(Object.keys(SUBS).filter(id=>SUBS[id].at===loc).map(id=>'sub:'+id)); return LEDGER.filter(e=>(from==null||e.ts>=from)&&(to==null||e.ts<to)&&(e.from===loc||e.to===loc||subIds.has(e.from)||subIds.has(e.to))); }
+function unitsOf(m){ return Object.values(m).reduce((a,b)=>a+(+b||0),0); }
+
+/* ============================================================
+   ACTIONS — transfer · adjust · sub-locations
+   ============================================================ */
+function locOptions(sel,excl,blank){ const opts=LOCS.filter(l=>l.id!==excl&&l.id!=='warehouse').map(l=>'<option value="'+l.id+'"'+(l.id===sel?' selected':'')+'>'+esc(l.name)+'</option>'); const subs=Object.keys(SUBS).filter(id=>SUBS[id].status!=='closed'&&'sub:'+id!==excl).map(id=>'<option value="sub:'+id+'"'+('sub:'+id===sel?' selected':'')+'>🧺 '+esc(SUBS[id].name)+' · in '+esc(locName(SUBS[id].at))+'</option>'); return (blank?'<option value="">'+blank+'</option>':'')+opts.join('')+(subs.length?'<optgroup label="Sub-locations">'+subs.join('')+'</optgroup>':''); }
+function openTransfer(k,from,toPre){
+  const it=itemInfo(k); const have=balAt(from,k);
+  if(from==='warehouse'){ toast('Stock leaves the Warehouse through a Transfer Request — it arrives here automatically when the request is ready','warn',5000); return; }
+  const d=modal('<h2>Move stock</h2><div class="pcard">'+img(it.image)+'<div><div class="cn">'+esc(it.name)+'</div>'+(varOf(it.variation)?'<div class="cv">'+esc(it.variation)+'</div>':'')+'<div class="cv">In '+esc(locName(from))+': <b class="mono" style="color:var(--ink)">'+fmt(have)+'</b></div></div></div>'+
+    '<div class="fld"><label>To</label><select id="trTo" class="sel">'+locOptions(toPre||'',from,'Choose…')+'</select></div>'+
+    '<div class="fld"><label>Units</label><input id="trQty" class="bigqty" type="number" min="1" value="'+Math.max(1,Math.min(have,1))+'"></div>'+
+    '<div class="row"><button class="btn sm" data-q="1">+1</button><button class="btn sm" data-q="6">+6</button><button class="btn sm" data-q="12">+12</button><button class="btn sm" data-q="24">+24</button><button class="btn sm ghost" id="trAll">All ('+fmt(have)+')</button></div>'+
+    (isAdmin()?'<div class="fld"><label>Date (admin — leave empty for now)</label><input id="trWhen" class="tinput" type="datetime-local" style="font-family:var(--body)"></div>':'')+
+    '<div class="fld"><label>Note</label><input id="trNote" class="tinput" style="font-family:var(--body)" placeholder="optional"></div>'+
+    '<div class="row" style="margin-top:16px"><button class="btn primary lg" id="trGo" style="flex:1">⇄ Move</button><button class="btn ghost" id="trX">Cancel</button></div>');
+  const q=d.querySelector('#trQty'); d.querySelectorAll('[data-q]').forEach(b=>b.onclick=()=>{ q.value=int(q.value)+(+b.dataset.q); }); d.querySelector('#trAll').onclick=()=>{ q.value=have; };
+  d.querySelector('#trX').onclick=closeModal;
+  d.querySelector('#trGo').onclick=async()=>{ const to=d.querySelector('#trTo').value; const n=int(q.value); if(!to){ toast('Choose where to move it','warn'); return; } if(n<1){ toast('Enter a quantity','warn'); return; }
+    if(n>have&&!confirm('Only '+fmt(have)+' here — moving '+n+' takes the location below zero. Continue?')) return;
+    const w=d.querySelector('#trWhen'); const ts=w&&w.value?new Date(w.value).getTime():null; d.querySelector('#trGo').disabled=true;
+    try{ await postEvent({item:k,qty:n,from,to,kind:isSub(to)||isSub(from)?'sub':'transfer',note:d.querySelector('#trNote').value.trim(),ts}); beep('ok'); toast('Moved '+n+' × '+it.name+' → '+locName(to),'ok'); closeModal(); }catch(e){ toast('Not saved: '+e.message,'err',4000); d.querySelector('#trGo').disabled=false; } };
+  q.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); d.querySelector('#trGo').click(); } }); setTimeout(()=>{ q.focus(); q.select(); },60);
+}
+function openAdjust(k,loc){
+  if(!isAdmin()){ toast('Corrections are made by Admin / Celina','warn'); return; }
+  const it=itemInfo(k); const have=balAt(loc,k);
+  const d=modal('<h2>Correct the stock</h2><div class="pcard">'+img(it.image)+'<div><div class="cn">'+esc(it.name)+'</div><div class="cv">In '+esc(locName(loc))+' now: <b class="mono" style="color:var(--ink)">'+fmt(have)+'</b></div></div></div>'+
+    '<div class="fld"><label>Actual quantity here</label><input id="adQty" class="bigqty" type="number" value="'+have+'"></div>'+
+    '<div class="fld"><label>Reason</label><select id="adR" class="sel"><option>Count correction</option><option>Damaged</option><option>Employee purchase</option><option>Found</option><option>Lost</option><option>Other</option></select><input id="adN" class="tinput" style="font-family:var(--body);margin-top:6px" placeholder="details"></div>'+
+    '<div class="row" style="margin-top:16px"><button class="btn primary lg" id="adGo" style="flex:1">Save</button><button class="btn ghost" id="adX">Cancel</button></div>');
+  d.querySelector('#adX').onclick=closeModal;
+  d.querySelector('#adGo').onclick=async()=>{ const n=int(d.querySelector('#adQty').value); const diff=n-have; if(!diff){ closeModal(); return; }
+    try{ await postEvent({item:k,qty:Math.abs(diff),from:diff<0?loc:null,to:diff>0?loc:null,kind:'adjust',note:d.querySelector('#adR').value+(d.querySelector('#adN').value?' — '+d.querySelector('#adN').value:'')}); beep('ok'); toast('Corrected: '+fmt(have)+' → '+fmt(n),'ok'); closeModal(); }catch(e){ toast(e.message,'err'); } };
+}
+function openAddItem(loc){ /* pick a product to add (admin) or to move into a sub-location */
+  const d=modal('<h2>Add a product to '+esc(locName(loc))+'</h2><p class="sub" style="font-size:13px">Only an Admin / Celina correction puts stock into a location from nowhere. Normally stock arrives through transfers.</p><div class="row" style="margin-top:10px;position:relative"><input id="apQ" class="tinput" placeholder="Name or barcode…" autocomplete="off"></div><div class="mlist" id="apList"></div><button class="btn ghost" id="apX" style="width:100%;margin-top:10px">Cancel</button>');
+  const inp=d.querySelector('#apQ'), list=d.querySelector('#apList');
+  const draw=()=>{ const rows=searchProducts(inp.value,60); list.innerHTML=rows.length?rows.map((v,i)=>'<button class="mpick" data-i="'+i+'">'+img(v.image)+'<div><div class="pn">'+esc(v.name)+'</div><div class="pv">'+esc(varOf(v.variation))+'</div></div><span class="pt">'+(balAt(loc,v.ikey)?'here '+fmt(balAt(loc,v.ikey)):'')+'</span></button>').join(''):'<div class="empty" style="padding:16px">Type a name or scan</div>'; list.querySelectorAll('.mpick').forEach(b=>b.onclick=()=>{ closeModal(); openAdjust(rows[+b.dataset.i].ikey,loc); }); };
+  inp.addEventListener('input',draw); draw(); setTimeout(()=>inp.focus(),50); d.querySelector('#apX').onclick=closeModal;
+}
+function openNewSub(loc){
+  const show=LOC_BY_ID[loc]&&LOC_BY_ID[loc].kind==='show';
+  const d=modal('<h2>New sub-location in '+esc(locName(loc))+'</h2><p class="sub" style="font-size:13px">'+(show?'One per show — name it with the show and date.':'A game or a set of goods that moves between rooms as one unit.')+'</p>'+
+    '<div class="fld"><label>Name</label><input id="nsName" class="tinput" style="font-family:var(--body)" placeholder="'+(show?'e.g. Frank & Son 11/15':'e.g. Game 1 · 30th Anniversary')+'"></div>'+
+    '<div class="row" style="margin-top:16px"><button class="btn primary lg" id="nsGo" style="flex:1">Create</button><button class="btn ghost" id="nsX">Cancel</button></div>');
+  d.querySelector('#nsX').onclick=closeModal;
+  d.querySelector('#nsGo').onclick=async()=>{ const n=d.querySelector('#nsName').value.trim(); if(n.length<2){ toast('Enter a name','warn'); return; }
+    const ref=R.child('subs').push(); await ref.set({name:n,kind:show?'show':'game',at:loc,status:'open',createdAt:Date.now(),createdBy:MY_NAME,items:{}}); closeModal(); toast('Sub-location "'+n+'" created','ok'); };
+}
+async function moveSub(id,to){ const s=SUBS[id]; if(!s||!to||to===s.at) return; await R.child('subs/'+id).update({at:to,movedAt:Date.now(),movedBy:MY_NAME}); await R.child('subs/'+id+'/log').push({at:Date.now(),by:MY_NAME,text:'moved '+locName(s.at)+' → '+locName(to)}); toast('"'+s.name+'" moved to '+locName(to),'ok'); }
+async function returnSubAll(id){ const s=SUBS[id]; if(!s) return; const items=s.items||{}; const n=unitsOf(items);
+  if(!confirm('Return everything in "'+s.name+'" ('+fmt(n)+' units) to '+locName(s.at)+' and close it?\nThe sub-location stays in history.')) return;
+  for(const k in items){ if(+items[k]) await postEvent({item:k,qty:Math.abs(+items[k]),from:+items[k]>0?'sub:'+id:s.at,to:+items[k]>0?s.at:'sub:'+id,kind:'sub',note:'return all · '+s.name}); }
+  await R.child('subs/'+id).update({status:'closed',closedAt:Date.now(),closedBy:MY_NAME,returnedTo:s.at}); toast('"'+s.name+'" returned and closed','ok'); }
+
+/* ============================================================
+   COUNT a location (physical count vs system) — discrepancies
+   ============================================================ */
+function openCount(loc){
+  const expected=itemsAt(loc); const lines={}; Object.keys(expected).forEach(k=>lines[k]={exp:+expected[k],cnt:null});
+  const draw=()=>{
+    const keys=Object.keys(lines).sort((a,b)=>itemInfo(a).name.localeCompare(itemInfo(b).name));
+    const counted=keys.filter(k=>lines[k].cnt!=null).length, diffs=keys.filter(k=>lines[k].cnt!=null&&lines[k].cnt!==lines[k].exp).length;
+    const d=modal('<h2>🔢 Count · '+esc(locName(loc))+'</h2><p class="sub" style="font-size:13px">Scan a product or type its name: a quantity box opens, what you enter is added to the count. Every line must be counted; a line that differs from the system becomes a discrepancy.</p>'+
+      '<div class="scanwrap" style="margin-top:10px"><div class="scanrow" style="position:relative"><input id="ctScan" autocomplete="off" placeholder="Scan or type a product…"><button class="btn" id="ctCam">📷</button><div class="sugg hide" id="ctSugg"></div></div></div>'+
+      '<div class="kvs"><div class="kv"><div class="n">'+keys.length+'</div><div class="l">lines</div></div><div class="kv '+(counted===keys.length?'ok':'warn')+'"><div class="n">'+counted+'</div><div class="l">counted</div></div><div class="kv '+(diffs?'err':'ok')+'"><div class="n">'+diffs+'</div><div class="l">differ</div></div></div>'+
+      '<div class="tscroll" style="max-height:44vh"><table><thead><tr><th>Item</th><th class="num">System</th><th class="num">Counted</th><th class="num">Δ</th></tr></thead><tbody>'+
+      (keys.length?keys.map(k=>{ const l=lines[k], it=itemInfo(k); const cls=l.cnt==null?'':(l.cnt===l.exp?'good':'bad'); return '<tr class="'+cls+'"><td class="name">'+esc(it.name)+(varOf(it.variation)?' <span class="mini">· '+esc(it.variation)+'</span>':'')+'</td><td class="num">'+fmt(l.exp)+'</td><td class="num"><input class="qi'+(l.cnt==null?'':(l.cnt===l.exp?' same':' diff'))+'" data-k="'+esc(k)+'" value="'+(l.cnt==null?'':l.cnt)+'" placeholder="—"></td><td class="num d">'+(l.cnt==null?'':((l.cnt-l.exp>0?'+':'')+(l.cnt-l.exp)))+'</td></tr>'; }).join(''):'<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:20px">Nothing here — scan what you find.</td></tr>')+'</tbody></table></div>'+
+      '<div class="row" style="margin-top:14px"><button class="btn ghost" id="ctZero" title="Set every uncounted line to 0">Uncounted = 0</button><div class="spacer"></div><button class="btn ghost" id="ctX">Cancel</button>'+
+      (isAdmin()?'<button class="btn warn" id="ctApply" '+(counted<keys.length?'disabled':'')+'>✎ Apply corrections</button>':'')+
+      '<button class="btn primary" id="ctSave" '+(counted<keys.length?'disabled':'')+'>'+(diffs?'✓ Confirm with '+diffs+' discrepanc'+(diffs===1?'y':'ies'):'✓ Confirm — all match')+'</button></div>',true);
+    d.querySelectorAll('.qi').forEach(i=>{ i.addEventListener('change',()=>{ const v=i.value.trim(); lines[i.dataset.k].cnt=v===''?null:Math.max(0,int(v)); draw(); }); i.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); i.blur(); } }); });
+    d.querySelector('#ctZero').onclick=()=>{ keys.forEach(k=>{ if(lines[k].cnt==null) lines[k].cnt=0; }); draw(); };
+    d.querySelector('#ctX').onclick=closeModal;
+    const sc=d.querySelector('#ctScan'), sg=d.querySelector('#ctSugg');
+    const pick=k=>{ sc.value=''; sg.classList.add('hide'); if(!lines[k]) lines[k]={exp:balAt(loc,k),cnt:null}; askQty(k); };
+    const askQty=k=>{ const it=itemInfo(k), l=lines[k]; const had=l.cnt==null?0:l.cnt;
+      const q=modal('<h2>'+(l.cnt==null?'How many?':'How many more?')+'</h2><div class="pcard">'+img(it.image)+'<div><div class="cn">'+esc(it.name)+'</div><div class="cv">'+esc(varOf(it.variation))+'</div>'+(l.cnt!=null?'<div class="cv">Already counted: <b style="color:var(--ink)">'+had+'</b> — this is added on top</div>':'')+'</div></div><input id="cqQ" class="bigqty" type="number" min="0" value="1"><div class="row"><button class="btn sm" data-q="6">+6</button><button class="btn sm" data-q="12">+12</button><button class="btn sm" data-q="24">+24</button></div><button class="btn primary lg" id="cqOk" style="width:100%;margin-top:12px">Add to the count</button>');
+      const inp=q.querySelector('#cqQ'); q.querySelectorAll('[data-q]').forEach(b=>b.onclick=()=>{ inp.value=int(inp.value)+(+b.dataset.q); });
+      const ok=()=>{ l.cnt=had+Math.max(0,int(inp.value)); beep('ok'); draw(); }; q.querySelector('#cqOk').onclick=ok; inp.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); ok(); } }); setTimeout(()=>{ inp.focus(); inp.select(); },50); };
+    const sugg=()=>{ const rows=searchProducts(sc.value,12); if(!sc.value.trim()||!rows.length){ sg.classList.add('hide'); return; } sg.innerHTML=rows.map((v,i)=>'<button class="mpick" data-i="'+i+'">'+img(v.image)+'<div><div class="pn">'+esc(v.name)+'</div><div class="pv">'+esc(varOf(v.variation))+'</div></div><span class="pt'+(lines[v.ikey]?' here':'')+'">'+(lines[v.ikey]?'system '+fmt(lines[v.ikey].exp):'')+'</span></button>').join(''); sg.classList.remove('hide'); sg.querySelectorAll('.mpick').forEach(b=>b.onmousedown=e=>{ e.preventDefault(); pick(rows[+b.dataset.i].ikey); }); };
+    sc.addEventListener('input',sugg); sc.addEventListener('keydown',e=>{ if(e.key!=='Enter') return; e.preventDefault(); const v=norm(sc.value); if(!v) return; const bk=BC[v]; if(bk&&bk.length===1){ pick(bk[0]); return; } const rows=searchProducts(v,2); if(rows.length===1){ pick(rows[0].ikey); return; } if(bk&&bk.length>1){ pick(bk[0]); return; } beep('warn'); toast('Nothing matches "'+sc.value+'"','warn'); });
+    sc.addEventListener('blur',()=>setTimeout(()=>sg.classList.add('hide'),150));
+    d.querySelector('#ctCam').onclick=()=>openCam(code=>{ sc.value=code; sc.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter'})); });
+    const finish=async(apply)=>{ const id=R.child('counts/'+loc).push().key; const out={}; keys.forEach(k=>out[fbKey(k)]={exp:lines[k].exp,cnt:lines[k].cnt,item:k}); await R.child('counts/'+loc+'/'+id).set({at:Date.now(),by:MY_NAME,lines:out,applied:!!apply,diffs});
+      for(const k of keys){ const l=lines[k]; if(l.cnt===l.exp) continue; if(apply){ const diff=l.cnt-l.exp; await postEvent({item:k,qty:Math.abs(diff),from:diff<0?loc:null,to:diff>0?loc:null,kind:'adjust',note:'count correction · '+locName(loc)}); }
+        else await R.child('discrepancies').push({at:Date.now(),loc,item:k,name:itemInfo(k).name,exp:l.exp,cnt:l.cnt,by:MY_NAME,status:'open',countId:id}); }
+      closeModal(); beep(diffs?'warn':'ok'); toast(apply?'Count applied · '+diffs+' line(s) corrected':(diffs?diffs+' discrepanc'+(diffs===1?'y':'ies')+' recorded for review':'Count confirmed — everything matches'),diffs&&!apply?'warn':'ok',4000); };
+    d.querySelector('#ctSave').onclick=()=>finish(false); const ap=d.querySelector('#ctApply'); if(ap) ap.onclick=()=>{ if(confirm('Apply '+diffs+' correction(s) to the stock now?')) finish(true); };
+    setTimeout(()=>sc.focus(),60);
+  };
+  draw();
+}
+
+/* ============================================================
+   RENDER — menu
+   ============================================================ */
+function renderMenu(){
+  $('#menuWho').textContent=MY_NAME+' · '+MY_ROLE;
+  const openDisc=Object.values(DISC).filter(d=>d.status==='open').length; $('#mDiscN').textContent=openDisc; $('#mDiscN').classList.toggle('hide',!openDisc);
+  $('#tiles').innerHTML=LOCS.map(l=>{ const m=totalsAt(l.id); const subs=subsAt(l.id); const n=Object.keys(m).filter(k=>m[k]).length;
+    const badges=(subs.length?'<span class="badge sub">'+subs.length+' sub-location'+(subs.length>1?'s':'')+'</span> ':'')+(Object.values(DISC).filter(d=>d.status==='open'&&d.loc===l.id).length?'<span class="badge err">discrepancies</span>':'');
+    return '<button class="tile" data-loc="'+l.id+'"><div class="micon">'+l.icon+'</div><div><div class="mname">'+esc(l.name.toUpperCase())+'</div><div class="mdesc">'+esc(l.desc)+'</div>'+(badges?'<div style="margin-top:7px">'+badges+'</div>':'')+'</div><div class="kpi">'+fmt(unitsOf(m))+'<small>'+n+' items</small></div></button>'; }).join('');
+  $$('#tiles [data-loc]').forEach(b=>b.onclick=()=>openLoc(b.dataset.loc));
+  const notes=[]; if(!DSOH&&DSOH_ERR) notes.push('<div class="note err">Daily SOH could not be read: '+esc(DSOH_ERR)+'</div>');
+  $('#menuNotes').innerHTML=notes.join('');
+}
+function openLoc(id){ curLoc=id; lcTab='stock'; lcQ=''; show('loc'); renderLoc(); }
+function renderLoc(){
+  const l=LOC_BY_ID[curLoc]; if(!l){ show('menu'); return; }
+  $('#lcTitle').textContent=l.icon+' '+l.name; const tot=totalsAt(curLoc); $('#lcItems').textContent=Object.keys(tot).filter(k=>tot[k]).length; $('#lcUnits').textContent=fmt(unitsOf(tot));
+  $('#lcCount').classList.toggle('hide',curLoc==='warehouse'); $('#lcNewSub').classList.toggle('hide',curLoc==='warehouse');
+  $$('#lcTabs button').forEach(b=>b.classList.toggle('on',b.dataset.t===lcTab));
+  /* drop targets: other locations + sub-locations here */
+  $('#lcDrop').innerHTML=(curLoc==='warehouse'?'':'<span class="mini">Drag a product onto:</span>'+LOCS.filter(x=>x.id!==curLoc&&x.id!=='warehouse').map(x=>'<span class="chip" data-drop="'+x.id+'">'+x.icon+' '+esc(x.name)+'</span>').join('')+subsAt(curLoc).map(s=>'<span class="chip sub" data-drop="sub:'+s.id+'">🧺 '+esc(s.name)+'</span>').join(''));
+  const body=$('#lcBody');
+  if(lcTab==='stock') renderStock(body); else if(lcTab==='subs') renderSubs(body); else if(lcTab==='days') renderDays(body); else renderLocLog(body);
+}
+function renderStock(body){
+  const m=itemsAt(curLoc), res=reservedAt(curLoc); const q=norm(lcQ);
+  let keys=Object.keys(m).filter(k=>m[k]); if(q) keys=keys.filter(k=>norm(itemInfo(k).name).includes(q)||norm(itemInfo(k).variation).includes(q)||barcodesOf(itemInfo(k).barcode).some(b=>b.includes(q)));
+  keys.sort((a,b)=>itemInfo(a).name.localeCompare(itemInfo(b).name));
+  const whNote=curLoc==='warehouse'?'<div class="note info">Warehouse stock is the live inventory count of CALIPOKE STATION (every location except the store). It is read-only here — shelves, pallets and in-warehouse moves live in <a href="'+WAREHOUSE_PLAN_URL+'" target="_blank">Warehouse Plan</a>; stock leaves the warehouse through a <a href="'+TRANSFER_APP_URL+'" target="_blank">Transfer Request</a>.</div>':'';
+  const stNote=curLoc==='stockroom'?'<p class="mini" style="margin-top:8px"><b style="color:var(--ok)">Ready</b> = can be used · <b style="color:var(--warn)">Reserved</b> = an approved Transfer Request is waiting to be prepared · a product that is 0 here but exists in another location shows up in the search with where it is.</p>':'';
+  body.innerHTML='<div class="row"><input id="lcQ" class="tinput" style="max-width:380px" placeholder="Find, scan or type a barcode…" value="'+esc(lcQ)+'" autocomplete="off"><button class="btn sm" id="lcCam">📷</button>'+(isAdmin()&&curLoc!=='warehouse'?'<button class="btn sm ghost" id="lcAdd">＋ Add / correct a product</button>':'')+'</div>'+whNote+stNote+
+    '<div class="list" id="lcList">'+(keys.length?keys.map(k=>rowHTML(k,m[k],res[k]||0)).join(''):'<div class="empty">'+(q?'Nothing matches. '+elsewhereHTML(q):'Nothing in '+esc(locName(curLoc))+' yet.')+'</div>')+'</div>'+(q&&keys.length?'<div class="mini" style="margin-top:10px">'+elsewhereHTML(q)+'</div>':'');
+  const inp=$('#lcQ'); inp.addEventListener('input',()=>{ lcQ=inp.value; const pos=inp.selectionStart; renderStock(body); const n=$('#lcQ'); n.focus(); try{ n.setSelectionRange(pos,pos); }catch(e){} });
+  inp.addEventListener('keydown',e=>{ if(e.key==='Enter'){ const bk=BC[norm(inp.value)]; if(bk&&bk.length){ lcQ=itemInfo(bk[0]).name; renderStock(body); } } });
+  $('#lcCam').onclick=()=>openCam(code=>{ lcQ=code; renderStock(body); });
+  const ad=$('#lcAdd'); if(ad) ad.onclick=()=>openAddItem(curLoc);
+  wireRows('#lcList',curLoc);
+}
+function elsewhereHTML(q){ const rows=searchProducts(q,8); const parts=[]; rows.forEach(v=>{ const where=[]; LOCS.forEach(l=>{ const b=balAt(l.id,v.ikey); if(b) where.push(locName(l.id)+' '+fmt(b)); }); subsAt(null); Object.keys(SUBS).forEach(id=>{ const s=SUBS[id]; if(s.status!=='closed'&&s.items&&+s.items[v.ikey]) where.push('🧺 '+s.name+' '+fmt(+s.items[v.ikey])); }); if(where.length) parts.push('<b>'+esc(v.name)+(varOf(v.variation)?' · '+esc(v.variation):'')+'</b>: '+esc(where.join(' · '))); }); return parts.length?'Also in: '+parts.join('<br>')+(curLoc==='stockroom'?'<br><span style="color:var(--warn)">Not here — request a transfer first.</span>':''):'Not in any location.'; }
+function rowHTML(k,qty,reserved,loc){ const it=itemInfo(k); const at=loc||curLoc; const ro=at==='warehouse'; const ready=qty-(reserved||0);
+  return '<div class="irow" data-k="'+esc(k)+'" data-loc="'+esc(at)+'">'+img(it.image)+'<div><div class="nm">'+esc(it.name)+'</div><div class="vr">'+esc(varOf(it.variation))+(it.barcode?' · <span class="mono">'+esc(barcodesOf(it.barcode)[0]||'')+'</span>':'')+(reserved?' · <span style="color:var(--warn)">reserved '+fmt(reserved)+' · ready '+fmt(ready)+'</span>':'')+'</div></div>'+
+    '<div class="q'+(qty<0?' neg':(reserved?' res':''))+'">'+fmt(qty)+'<small>units</small></div><div class="acts">'+(ro?'':'<span class="grip" title="Drag to another location">⠿</span><button class="btn sm" data-tr="'+esc(k)+'">⇄</button>'+(isAdmin()?'<button class="btn sm ghost" data-adj="'+esc(k)+'" title="Correct">✎</button>':''))+'</div></div>'; }
+function wireRows(sel,loc){ $$(sel+' [data-tr]').forEach(b=>b.onclick=()=>openTransfer(b.dataset.tr,loc)); $$(sel+' [data-adj]').forEach(b=>b.onclick=()=>openAdjust(b.dataset.adj,loc)); }
+function renderSubs(body){
+  const subs=subsAt(curLoc); const closed=Object.keys(SUBS).filter(id=>SUBS[id].status==='closed'&&(SUBS[id].returnedTo===curLoc||SUBS[id].at===curLoc)).map(id=>Object.assign({id},SUBS[id])).sort((a,b)=>(b.closedAt||0)-(a.closedAt||0)).slice(0,20);
+  body.innerHTML=(subs.length?subs.map(s=>subHTML(s)).join(''):'<div class="empty">No sub-locations here. Create one for a game or a show, then move products into it (drag a product onto its chip above).</div>')+
+    (closed.length?'<h2 style="margin-top:22px">Closed</h2>'+closed.map(s=>'<div class="subcard" style="opacity:.7"><div class="sh"><span class="sn">'+esc(s.name)+'</span><span class="badge muted">closed '+esc(fmtTime(s.closedAt))+'</span><div class="spacer"></div><button class="btn sm ghost" data-subhist="'+s.id+'">🕘 History</button></div></div>').join(''):'');
+  subs.forEach(s=>{ const items=s.items||{}; const keys=Object.keys(items).filter(k=>items[k]).sort((a,b)=>itemInfo(a).name.localeCompare(itemInfo(b).name)); const host=body.querySelector('[data-sublist="'+s.id+'"]'); if(host) host.innerHTML=keys.length?keys.map(k=>rowHTML(k,items[k],0,'sub:'+s.id)).join(''):'<div class="empty" style="padding:16px">Empty — drag products here from the Stock tab.</div>'; wireRows('[data-sublist="'+s.id+'"]','sub:'+s.id); });
+  $$('#lcBody [data-submove]').forEach(sl=>sl.onchange=()=>{ if(sl.value) moveSub(sl.dataset.submove,sl.value); });
+  $$('#lcBody [data-subret]').forEach(b=>b.onclick=()=>returnSubAll(b.dataset.subret));
+  $$('#lcBody [data-subhist]').forEach(b=>b.onclick=()=>openSubHistory(b.dataset.subhist));
+}
+function subHTML(s){ const items=s.items||{}; const u=unitsOf(items); const sold=unitsOf(s.sold||{}), start=unitsOf(s.start||{});
+  return '<div class="subcard"><div class="sh"><span class="sn">🧺 '+esc(s.name)+'</span><span class="badge sub">'+esc(s.kind)+'</span><span class="pill">now <b>'+fmt(u)+'</b></span>'+(start?'<span class="pill">start <b>'+fmt(start)+'</b> · sold <b>'+fmt(sold)+'</b></span>':'')+'<div class="spacer"></div>'+
+    '<select class="sel" data-submove="'+s.id+'" style="min-width:150px"><option value="">Move whole sub to…</option>'+LOCS.filter(l=>l.id!==s.at&&l.id!=='warehouse'&&(l.kind!=='show'||s.kind==='show')).map(l=>'<option value="'+l.id+'">'+l.icon+' '+esc(l.name)+'</option>').join('')+'</select>'+
+    (s.at==='stockroom'?'<button class="btn sm warn" data-subret="'+s.id+'">↩ Return all to Stockroom</button>':'')+'<button class="btn sm ghost" data-subhist="'+s.id+'">🕘</button></div><div class="list" data-sublist="'+s.id+'"></div></div>'; }
+function openSubHistory(id){ const s=SUBS[id]; const evs=LEDGER.filter(e=>e.from==='sub:'+id||e.to==='sub:'+id); const log=Object.values(s.log||{});
+  modal('<h2>🧺 '+esc(s.name)+'</h2><p class="sub" style="font-size:13px">'+esc(s.kind)+' · created '+esc(fmtTime(s.createdAt))+' by '+esc(s.createdBy||'')+(s.closedAt?' · closed '+esc(fmtTime(s.closedAt)):'')+' · now in '+esc(locName(s.at))+'</p>'+
+    (log.length?'<div style="margin-top:8px">'+log.map(x=>'<div class="logrow"><span class="lt">'+esc(fmtTime(x.at))+'</span><span>'+esc(x.text)+'</span><span class="mini">'+esc(x.by||'')+'</span></div>').join('')+'</div>':'')+
+    '<div style="margin-top:10px">'+(evs.length?evs.slice().reverse().map(e=>logRowHTML(e)).join(''):'<p class="mini">No movements yet.</p>')+'</div><button class="btn ghost" onclick="closeModal()" style="width:100%;margin-top:12px">Close</button>',true); }
+function renderDays(body){
+  const days=[]; const d0=new Date(); for(let i=0;i<14;i++){ const d=new Date(d0); d.setDate(d.getDate()-i); days.push(dayOf(d.getTime())); }
+  const sel=body.dataset.day||days[0];
+  const open=balancesAtTime(curLoc,dayStart(sel)-1), close=balancesAtTime(curLoc,Math.min(dayEnd(sel)-1,Date.now())); const evs=eventsFor(curLoc,dayStart(sel),dayEnd(sel));
+  const keys=[...new Set([...Object.keys(open),...Object.keys(close),...evs.map(e=>e.item)])].sort((a,b)=>itemInfo(a).name.localeCompare(itemInfo(b).name));
+  const inn={}, out={}; const subIds=new Set(Object.keys(SUBS).filter(id=>SUBS[id].at===curLoc).map(id=>'sub:'+id));
+  evs.forEach(e=>{ const inFrom=e.from===curLoc||subIds.has(e.from), inTo=e.to===curLoc||subIds.has(e.to); if(inTo&&!inFrom) inn[e.item]=(inn[e.item]||0)+e.qty; if(inFrom&&!inTo) out[e.item]=(out[e.item]||0)+e.qty; });
+  body.innerHTML='<div class="daybar"><span class="mini">Day</span><input type="date" id="dyDate" value="'+sel+'" max="'+days[0]+'"><div class="seg">'+days.slice(0,7).map(d=>'<button data-d="'+d+'"'+(d===sel?' class="on"':'')+'>'+d.slice(5)+'</button>').join('')+'</div></div>'+
+    '<div class="kvs" style="margin-top:12px"><div class="kv"><div class="n">'+fmt(unitsOf(open))+'</div><div class="l">opening</div></div><div class="kv ok"><div class="n">+'+fmt(unitsOf(inn))+'</div><div class="l">in</div></div><div class="kv err"><div class="n">−'+fmt(unitsOf(out))+'</div><div class="l">out</div></div><div class="kv info"><div class="n">'+fmt(unitsOf(close))+'</div><div class="l">closing'+(sel===days[0]?' (now)':'')+'</div></div></div>'+
+    '<div class="tscroll" style="max-height:52vh"><table><thead><tr><th>Item</th><th class="num">Opening</th><th class="num">In</th><th class="num">Out</th><th class="num">Closing</th></tr></thead><tbody>'+(keys.length?keys.map(k=>'<tr><td class="name">'+esc(itemInfo(k).name)+(varOf(itemInfo(k).variation)?' <span class="mini">· '+esc(itemInfo(k).variation)+'</span>':'')+'</td><td class="num">'+fmt(open[k]||0)+'</td><td class="num" style="color:var(--ok)">'+(inn[k]?'+'+fmt(inn[k]):'')+'</td><td class="num" style="color:var(--err)">'+(out[k]?'−'+fmt(out[k]):'')+'</td><td class="num"><b>'+fmt(close[k]||0)+'</b></td></tr>').join(''):'<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:20px">Nothing on this day.</td></tr>')+'</tbody></table></div>'+
+    '<p class="mini" style="margin-top:10px">Opening = closing of the previous day. Figures are recomputed from the movement journal, so a correction entered for an earlier day (admin, in the Move dialog) changes every day after it. Streamer rooms will switch to shift-based days (day + night) in the next build.</p>';
+  body.querySelector('#dyDate').onchange=e=>{ body.dataset.day=e.target.value; renderDays(body); }; body.querySelectorAll('[data-d]').forEach(b=>b.onclick=()=>{ body.dataset.day=b.dataset.d; renderDays(body); });
+}
+function kindLabel(e){ return {transfer:'⇄ Transfer',sub:'🧺 Sub-location',adjust:'✎ Correction',sale:'💲 Sale',recv:'📥 Receiving'}[e.kind]||e.kind; }
+function logRowHTML(e){ return '<div class="logrow"><span class="lt">'+esc(fmtTime(e.ts))+'<br>'+esc(e.by||'')+'</span><span><span class="k-'+esc(e.kind)+'">'+kindLabel(e)+'</span> · <b>'+esc(e.name||itemInfo(e.item).name)+'</b> · '+esc(locName(e.from))+' → '+esc(locName(e.to))+(e.note?' <span class="mini">· '+esc(e.note)+'</span>':'')+(e.src&&e.src!=='page'?' <span class="badge muted">'+esc(e.src)+'</span>':'')+'</span><span class="lq">'+fmt(e.qty)+'</span></div>'; }
+function renderLocLog(body){ const evs=eventsFor(curLoc,null,null).slice().reverse().slice(0,300); body.innerHTML='<div class="card">'+(evs.length?evs.map(logRowHTML).join(''):'<p class="mini">No movements yet.</p>')+'</div>'; }
+
+/* ---------- drag & drop: product row → location chip / sub chip ---------- */
+let dnd=null;
+document.addEventListener('pointerdown',e=>{ if(e.button!==0||screen!=='loc') return; const row=e.target.closest('.irow'); if(!row||row.dataset.loc==='warehouse') return; if(e.target.closest('button,input,img')) return; if(e.pointerType==='touch'&&!e.target.closest('.grip')) return; e.preventDefault(); dnd={k:row.dataset.k,from:row.dataset.loc,x0:e.clientX,y0:e.clientY,on:false,ghost:null,target:null}; });
+document.addEventListener('pointermove',e=>{ if(!dnd) return; if(!dnd.on){ if(Math.hypot(e.clientX-dnd.x0,e.clientY-dnd.y0)<6) return; dnd.on=true; dnd.ghost=document.createElement('div'); dnd.ghost.className='dragghost none'; dnd.ghost.textContent=itemInfo(dnd.k).name; document.body.appendChild(dnd.ghost); document.body.classList.add('dragging'); }
+  dnd.ghost.style.left=e.clientX+'px'; dnd.ghost.style.top=e.clientY+'px'; $$('.dropon').forEach(x=>x.classList.remove('dropon')); const t=document.elementFromPoint(e.clientX,e.clientY); const c=t&&t.closest('[data-drop]'); dnd.target=null; if(c&&c.dataset.drop!==dnd.from){ c.classList.add('dropon'); dnd.target=c.dataset.drop; dnd.ghost.className='dragghost'; dnd.ghost.textContent=itemInfo(dnd.k).name+' → '+locName(c.dataset.drop); } else dnd.ghost.className='dragghost none'; });
+document.addEventListener('pointerup',()=>{ if(!dnd) return; const d=dnd; dnd=null; $$('.dropon').forEach(x=>x.classList.remove('dropon')); document.body.classList.remove('dragging'); if(d.ghost) d.ghost.remove(); if(d.on&&d.target) openTransfer(d.k,d.from,d.target); });
+
+/* ============================================================
+   OVERVIEW — all locations, any day
+   ============================================================ */
+function renderOverview(){
+  $('#ovDate').value=ovDay; const q=norm($('#ovQ').value); const showZero=$('#ovZero').checked; const ts=Math.min(dayEnd(ovDay)-1,Date.now());
+  const cols=LOCS.map(l=>({id:l.id,name:l.name,m:l.id==='warehouse'?itemsAt('warehouse'):balancesAtTime(l.id,ts)}));
+  let keys=new Set(); cols.forEach(c=>Object.keys(c.m).forEach(k=>keys.add(k))); if(showZero) Object.keys(INV).forEach(k=>keys.add(k));
+  keys=[...keys].filter(k=>!q||norm(itemInfo(k).name).includes(q)).sort((a,b)=>itemInfo(a).name.localeCompare(itemInfo(b).name));
+  const rows=keys.map(k=>({k,vals:cols.map(c=>+c.m[k]||0)})).filter(r=>showZero||r.vals.some(v=>v));
+  $('#ovTbl').innerHTML='<thead><tr><th>Item</th>'+cols.map(c=>'<th class="num">'+esc(c.name)+'</th>').join('')+'<th class="num">Total</th><th class="num" title="Everything except the warehouse">LS</th></tr></thead><tbody>'+(rows.length?rows.slice(0,1500).map(r=>'<tr><td class="name">'+esc(itemInfo(r.k).name)+(varOf(itemInfo(r.k).variation)?' <span class="mini">· '+esc(itemInfo(r.k).variation)+'</span>':'')+'</td>'+r.vals.map(v=>'<td class="num"'+(v<0?' style="color:var(--err)"':'')+'>'+(v?fmt(v):'')+'</td>').join('')+'<td class="num"><b>'+fmt(r.vals.reduce((a,b)=>a+b,0))+'</b></td><td class="num">'+fmt(r.vals.slice(1).reduce((a,b)=>a+b,0))+'</td></tr>').join(''):'<tr><td colspan="'+(cols.length+3)+'" style="text-align:center;color:var(--muted);padding:24px">Nothing yet.</td></tr>')+'</tbody>';
+  $('#ovTbl')._rows=rows; $('#ovTbl')._cols=cols;
+}
+function csv(rows,name){ const t=rows.map(r=>r.map(c=>{ c=String(c==null?'':c); return /[",\n]/.test(c)?'"'+c.replace(/"/g,'""')+'"':c; }).join(',')).join('\r\n'); const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob(['\ufeff'+t],{type:'text/csv;charset=utf-8'})); a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),4000); }
+
+/* ============================================================
+   DAILY SOH (read-only) — shared reader from the station
+   ============================================================ */
+const DSOH_SHEET_ID='1keeoQrnw2jemRXxLq8iEp4UixyqvUdV4QrBFc7Mp5bE', DSOH_LS_KEY='cph.dailysoh.v1';
+function dsohCSV(text){ const rows=[]; let row=[],cur='',q=false; for(let i=0;i<text.length;i++){ const c=text[i]; if(q){ if(c==='"'){ if(text[i+1]==='"'){ cur+='"'; i++; } else q=false; } else cur+=c; } else if(c==='"') q=true; else if(c===','){ row.push(cur); cur=''; } else if(c==='\n'){ row.push(cur); rows.push(row); row=[]; cur=''; } else if(c!=='\r') cur+=c; } if(cur!==''||row.length){ row.push(cur); rows.push(row); } return rows; }
+function dsohNum(v){ if(v==null||v==='') return null; const n=parseFloat(String(v).replace(/[,\s]/g,'')); return isFinite(n)?n:null; }
+function dsohParse(text){ const rows=dsohCSV(text); if(rows.length<2) return []; const H=rows[0].map(norm); const col=names=>{ for(const n of names){ const i=H.indexOf(n); if(i>=0) return i; } return -1; };
+  const cWh=col(['wh eod soh','eod soh']), cLs=col(['ls eod soh']), cTr=col(['wh transfer to ls','transfer to ls']); if(cWh<0) return []; const days=[]; let cur=null;
+  for(let r=1;r<rows.length;r++){ const row=rows[r]; const c0=String(row[0]||'').trim(); if(!c0) continue; const m=c0.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/); if(m){ cur={date:m[3]+'-'+m[1].padStart(2,'0')+'-'+m[2].padStart(2,'0'),items:{},filled:0}; days.push(cur); continue; } if(!cur||c0.toUpperCase()==='ITEM') continue;
+    const wh=dsohNum(row[cWh]), ls=cLs>=0?dsohNum(row[cLs]):null, tr=cTr>=0?dsohNum(row[cTr]):null; if(wh!=null||ls!=null) cur.filled++; const k=norm(c0), prev=cur.items[k]; if(prev){ prev.wh+=wh||0; prev.ls+=ls||0; prev.tr+=tr||0; } else cur.items[k]={n:c0,wh:wh||0,ls:ls||0,tr:tr||0}; }
+  return days.filter(d=>d.filled>0); }
+async function dsohFetchTab(name){ const r=await fetch('https://docs.google.com/spreadsheets/d/'+DSOH_SHEET_ID+'/gviz/tq?tqx=out:csv&sheet='+encodeURIComponent(name)+'&_='+Date.now(),{credentials:'omit',cache:'no-store'}); if(!r.ok) throw new Error('HTTP '+r.status); const t=await r.text(); if(/<!DOCTYPE|<html/i.test(t.slice(0,300))) throw new Error('Daily SOH sheet is not shared for reading'); return t; }
+function dsohTabNames(mon){ const M=mon.getMonth()+1,D=mon.getDate(); return [pad2(M)+'/'+pad2(D),M+'/'+D,pad2(M)+'/'+D,M+'/'+pad2(D)]; }
+async function loadDailySOH(force){ if(!force){ try{ const c=JSON.parse(localStorage.getItem(DSOH_LS_KEY)||'null'); if(c&&c.items&&Date.now()-c.at<60*60*1000) return c; }catch(e){} } let lastErr=null;
+  for(let back=0;back<3;back++){ const mon=new Date(); mon.setHours(0,0,0,0); mon.setDate(mon.getDate()-((mon.getDay()+6)%7)-7*back); for(const nm of dsohTabNames(mon)){ let days=null; try{ days=dsohParse(await dsohFetchTab(nm)); }catch(e){ lastErr=e; continue; } if(!days.length) break; const d=days[days.length-1]; const out={date:d.date,tab:nm,items:d.items,at:Date.now()}; try{ localStorage.setItem(DSOH_LS_KEY,JSON.stringify(out)); }catch(e){} return out; } }
+  throw lastErr||new Error('no week tab found'); }
+async function refreshDSOH(force){ try{ DSOH=await loadDailySOH(force); DSOH_ERR=''; }catch(e){ DSOH_ERR=e.message||String(e); } renderCurrent(); }
+
+/* ============================================================
+   DISCREPANCIES
+   ============================================================ */
+function renderDisc(){
+  $$('#dcTabs button').forEach(b=>b.classList.toggle('on',b.dataset.t===dcTab)); const body=$('#dcBody');
+  if(dcTab==='open'){ const list=Object.keys(DISC).map(id=>Object.assign({id},DISC[id])).sort((a,b)=>(a.status==='open'?0:1)-(b.status==='open'?0:1)||(b.at||0)-(a.at||0)).slice(0,300);
+    body.innerHTML='<p class="mini">Lines where a physical count did not match the system and the employee confirmed the difference. Admin / Celina can apply the counted number (a correction is written to the journal) or dismiss the line.</p><div class="tscroll"><table><thead><tr><th>When</th><th>Location</th><th>Item</th><th class="num">System</th><th class="num">Counted</th><th class="num">Δ</th><th>By</th><th>Status</th><th></th></tr></thead><tbody>'+
+      (list.length?list.map(d=>'<tr class="'+(d.status==='open'?'bad':'')+'"><td class="mono">'+esc(fmtTime(d.at))+'</td><td>'+esc(locName(d.loc))+'</td><td class="name">'+esc(d.name)+'</td><td class="num">'+fmt(d.exp)+'</td><td class="num">'+fmt(d.cnt)+'</td><td class="num d">'+((d.cnt-d.exp>0?'+':'')+(d.cnt-d.exp))+'</td><td>'+esc(d.by||'')+'</td><td>'+(d.status==='open'?'<span class="badge err">open</span>':'<span class="badge ok">'+esc(d.status)+'</span>'+(d.note?' <span class="mini">'+esc(d.note)+'</span>':''))+'</td><td>'+(d.status==='open'&&isAdmin()?'<button class="btn sm warn" data-fix="'+d.id+'">✎ Apply counted</button> <button class="btn sm ghost" data-dismiss="'+d.id+'">Dismiss</button>':'')+'</td></tr>').join(''):'<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:24px">No discrepancies. 🎉</td></tr>')+'</tbody></table></div>';
+    $$('#dcBody [data-fix]').forEach(b=>b.onclick=async()=>{ const d=DISC[b.dataset.fix]; const now=balAt(d.loc,d.item); const diff=d.cnt-d.exp; if(!confirm('Apply the counted number for '+d.name+' in '+locName(d.loc)+'?\nSystem now '+fmt(now)+' → '+fmt(now+diff))) return; await postEvent({item:d.item,qty:Math.abs(diff),from:diff<0?d.loc:null,to:diff>0?d.loc:null,kind:'adjust',note:'discrepancy fixed · counted '+d.cnt+' vs '+d.exp}); await R.child('discrepancies/'+b.dataset.fix).update({status:'fixed',fixedAt:Date.now(),fixedBy:MY_NAME}); toast('Applied','ok'); });
+    $$('#dcBody [data-dismiss]').forEach(b=>b.onclick=async()=>{ const why=prompt('Why is this not a real discrepancy?',''); if(why===null) return; await R.child('discrepancies/'+b.dataset.dismiss).update({status:'dismissed',note:why,fixedAt:Date.now(),fixedBy:MY_NAME}); });
+    return; }
+  if(!DSOH){ body.innerHTML='<div class="empty">'+(DSOH_ERR?'Daily SOH could not be read: '+esc(DSOH_ERR):'Reading Daily SOH…')+'</div>'; return; }
+  /* system vs Daily SOH on the Daily SOH's day: Warehouse ↔ WH EOD, sum of rooms ↔ LS EOD */
+  const ts=Math.min(dayEnd(DSOH.date)-1,Date.now()); const wh=itemsAt('warehouse'); const ls={}; ROOM_LOCS.forEach(l=>{ const m=balancesAtTime(l,ts); for(const k in m) ls[k]=(ls[k]||0)+m[k]; });
+  const byName={}; const add=(k,f,v)=>{ const n=norm(itemInfo(k).name); (byName[n]=byName[n]||{n:itemInfo(k).name,wh:0,ls:0}); byName[n][f]+=v; }; for(const k in wh) add(k,'wh',wh[k]); for(const k in ls) add(k,'ls',ls[k]);
+  const rows=[]; const seen=new Set(); for(const n in byName){ const d=DSOH.items[n]; seen.add(n); rows.push({n:byName[n].n,wh:byName[n].wh,ls:byName[n].ls,eWh:d?d.wh:null,eLs:d?d.ls:null}); } for(const n in DSOH.items){ if(seen.has(n)) continue; const d=DSOH.items[n]; if(!d.wh&&!d.ls) continue; rows.push({n:d.n,wh:0,ls:0,eWh:d.wh,eLs:d.ls}); }
+  rows.forEach(r=>{ r.dWh=r.eWh==null?null:r.wh-r.eWh; r.dLs=r.eLs==null?null:r.ls-r.eLs; r.bad=(r.dWh||0)!==0||(r.dLs||0)!==0; }); rows.sort((a,b)=>(Math.abs(b.dWh||0)+Math.abs(b.dLs||0))-(Math.abs(a.dWh||0)+Math.abs(a.dLs||0))||a.n.localeCompare(b.n));
+  const q=norm(body.dataset.q||''); const list=rows.filter(r=>!q||norm(r.n).includes(q)); const bad=rows.filter(r=>r.bad).length;
+  body.innerHTML='<div class="kvs"><div class="kv"><div class="n">'+esc(DSOH.date)+'</div><div class="l">Daily SOH day (tab '+esc(DSOH.tab)+')</div></div><div class="kv '+(bad?'err':'ok')+'"><div class="n">'+bad+'</div><div class="l">items that differ</div></div><div class="kv"><div class="n">'+rows.length+'</div><div class="l">items compared</div></div></div>'+
+    '<p class="mini">System figures are taken at the end of the Daily SOH day. <b>WH</b> = Warehouse (station count) vs <b>WH EOD SOH</b>; <b>LS</b> = Stockroom + rooms + games + Card Show vs <b>LS EOD SOH</b>. The sheet is never written to.</p>'+
+    '<div class="row" style="margin-top:8px"><input id="dcQ" class="tinput" style="max-width:360px" placeholder="Find an item…" value="'+esc(body.dataset.q||'')+'"></div>'+
+    '<div class="tscroll"><table><thead><tr><th>Item</th><th class="num">WH system</th><th class="num">WH EOD SOH</th><th class="num">Δ WH</th><th class="num">LS system</th><th class="num">LS EOD SOH</th><th class="num">Δ LS</th></tr></thead><tbody>'+list.slice(0,1500).map(r=>'<tr class="'+(r.bad?'bad':'good')+'"><td class="name">'+esc(r.n)+'</td><td class="num">'+fmt(r.wh)+'</td><td class="num">'+(r.eWh==null?'—':fmt(r.eWh))+'</td><td class="num d">'+(r.dWh==null?'':(r.dWh>0?'+':'')+r.dWh)+'</td><td class="num">'+fmt(r.ls)+'</td><td class="num">'+(r.eLs==null?'—':fmt(r.eLs))+'</td><td class="num d">'+(r.dLs==null?'':(r.dLs>0?'+':'')+r.dLs)+'</td></tr>').join('')+'</tbody></table></div>';
+  const inp=$('#dcQ'); inp.addEventListener('input',()=>{ body.dataset.q=inp.value; const p=inp.selectionStart; renderDisc(); const n=$('#dcQ'); n.focus(); try{ n.setSelectionRange(p,p); }catch(e){} }); body._rows=list;
+}
+
+/* ============================================================
+   HISTORY
+   ============================================================ */
+function renderHistory(){ const q=norm($('#hsQ').value), kind=$('#hsKind').value; let list=LEDGER.slice().reverse(); if(kind) list=list.filter(e=>e.kind===kind); if(q) list=list.filter(e=>[e.name,locName(e.from),locName(e.to),e.by,e.note].some(x=>norm(x).includes(q))); $('#hsInfo').textContent=list.length+' movement(s)'; $('#hsBody').innerHTML=list.length?list.slice(0,400).map(logRowHTML).join(''):'<p class="mini">Nothing yet.</p>'; $('#hsBody')._rows=list; }
+
+/* ============================================================
+   CAMERA
+   ============================================================ */
+let camScanner=null, camCb=null, camLast={code:'',t:0};
+async function openCam(cb){ if(!window.Html5Qrcode){ toast('Camera library not loaded','err'); return; } camCb=cb; $('#cam').classList.remove('hide'); const F=window.Html5QrcodeSupportedFormats; const fmts=F?['QR_CODE','CODE_128','CODE_39','EAN_13','EAN_8','UPC_A','UPC_E','ITF','DATA_MATRIX'].map(n=>F[n]).filter(v=>v!==undefined):undefined;
+  try{ camScanner=new Html5Qrcode('camView',{formatsToSupport:fmts,verbose:false}); await camScanner.start({facingMode:'environment'},{fps:10,qrbox:(w,h)=>({width:Math.max(180,Math.floor(w*.9)),height:Math.max(120,Math.floor(Math.min(h*.55,w*.55)))}),experimentalFeatures:{useBarCodeDetectorIfSupported:true}},text=>{ const now=Date.now(); if(text===camLast.code&&now-camLast.t<1500) return; camLast={code:text,t:now}; beep('ok'); const f=camCb; closeCam(); if(f) f(String(text).trim()); },()=>{}); }
+  catch(e){ toast('Cannot open camera: '+(e&&e.message||e),'err'); $('#cam').classList.add('hide'); camScanner=null; } }
+async function closeCam(){ $('#cam').classList.add('hide'); if(camScanner){ try{ await camScanner.stop(); }catch(e){} try{ camScanner.clear(); }catch(e){} camScanner=null; } }
+$('#camClose').onclick=closeCam;
+
+/* ============================================================
+   ROUTER + WIRING
+   ============================================================ */
+function renderCurrent(){ if(!MY_NAME) return; if(screen==='menu') renderMenu(); else if(screen==='loc') renderLoc(); else if(screen==='overview') renderOverview(); else if(screen==='disc') renderDisc(); else if(screen==='history') renderHistory(); }
+function goMenu(){ show('menu'); renderMenu(); }
+$('#homeBtn').onclick=goMenu; $('#lcBack').onclick=goMenu; $('#ovBack').onclick=goMenu; $('#dcBack').onclick=goMenu; $('#hsBack').onclick=goMenu;
+$('#logoutBtn').onclick=()=>{ try{ localStorage.removeItem('cph.name'); }catch(e){} location.reload(); };
+$('#mOverview').onclick=()=>{ show('overview'); renderOverview(); }; $('#mDisc').onclick=()=>{ show('disc'); renderDisc(); }; $('#mHistory').onclick=()=>{ show('history'); renderHistory(); };
+$('#mGame').onclick=()=>toast('Streaming Game builder comes in the next build. For now: create a sub-location in Stockroom and move products into it.','info',5000);
+$('#mReload').onclick=()=>loadInventory(true);
+$$('#lcTabs button').forEach(b=>b.onclick=()=>{ lcTab=b.dataset.t; renderLoc(); });
+$('#lcCount').onclick=()=>openCount(curLoc); $('#lcNewSub').onclick=()=>openNewSub(curLoc);
+$('#ovDate').addEventListener('change',e=>{ ovDay=e.target.value||dayOf(Date.now()); renderOverview(); }); $('#ovToday').onclick=()=>{ ovDay=dayOf(Date.now()); renderOverview(); }; $('#ovQ').addEventListener('input',renderOverview); $('#ovZero').addEventListener('change',renderOverview);
+$('#ovCsv').onclick=()=>{ const t=$('#ovTbl'); csv([['Item',...t._cols.map(c=>c.name),'Total']].concat(t._rows.map(r=>[itemInfo(r.k).name+(varOf(itemInfo(r.k).variation)?' · '+itemInfo(r.k).variation:''),...r.vals,r.vals.reduce((a,b)=>a+b,0)])),'cph_inventory_'+ovDay+'.csv'); };
+$$('#dcTabs button').forEach(b=>b.onclick=()=>{ dcTab=b.dataset.t; renderDisc(); }); $('#dcUpd').onclick=()=>{ toast('Reading Daily SOH…','info',1500); refreshDSOH(true); };
+$('#dcCsv').onclick=()=>{ if(dcTab==='soh'&&$('#dcBody')._rows) csv([['Item','WH system','WH EOD SOH','Δ WH','LS system','LS EOD SOH','Δ LS']].concat($('#dcBody')._rows.map(r=>[r.n,r.wh,r.eWh??'',r.dWh??'',r.ls,r.eLs??'',r.dLs??''])),'cph_vs_dailysoh_'+(DSOH?DSOH.date:'')+'.csv'); else csv([['When','Location','Item','System','Counted','Diff','By','Status']].concat(Object.values(DISC).map(d=>[fmtTime(d.at),locName(d.loc),d.name,d.exp,d.cnt,d.cnt-d.exp,d.by,d.status])),'cph_discrepancies.csv'); };
+$('#hsQ').addEventListener('input',renderHistory); $('#hsKind').addEventListener('change',renderHistory);
+$('#hsCsv').onclick=()=>{ const l=$('#hsBody')._rows||[]; csv([['Time','Kind','Item','Qty','From','To','By','Note','Source']].concat(l.map(e=>[fmtTime(e.ts),e.kind,e.name,e.qty,locName(e.from),locName(e.to),e.by,e.note||'',e.src||''])),'cph_history.csv'); };
+
+/* ---------- gate ---------- */
+function roleOf(n){ return ELEVATED.includes(norm(n))?'admin':'staff'; }
+function enter(){ const v=$('#nameInput').value.trim(); if(v.length<2){ toast('Enter your name','warn'); return; } const role=roleOf(v);
+  if(role!=='staff'){ const pin=$('#pinInput'); if(pin.classList.contains('hide')){ pin.classList.remove('hide'); $('#gateHint').textContent='This name has extra permissions — enter the PIN.'; pin.focus(); return; } if(pin.value.trim()!==ELEVATED_PIN){ toast('Wrong PIN','err'); pin.value=''; pin.focus(); return; } }
+  MY_NAME=v; MY_ROLE=role; try{ localStorage.setItem('cph.name',v); }catch(e){} $('#meName').textContent=v+(role!=='staff'?' · '+role:''); $('#namegate').classList.add('hide'); $('#appHeader').classList.remove('hide'); $('#appMain').classList.remove('hide'); goMenu(); connect(); }
+$('#enterBtn').onclick=enter; $('#nameInput').addEventListener('keydown',e=>{ if(e.key==='Enter') enter(); }); $('#pinInput').addEventListener('keydown',e=>{ if(e.key==='Enter') enter(); });
+$('#nameInput').addEventListener('input',()=>{ if(roleOf($('#nameInput').value)==='staff'){ $('#pinInput').classList.add('hide'); $('#gateHint').textContent='Your name goes on every movement you make.'; } });
+(function boot(){ try{ const s=localStorage.getItem('cph.name'); if(s){ $('#nameInput').value=s; if(roleOf(s)!=='staff'){ $('#pinInput').classList.remove('hide'); $('#gateHint').textContent='This name has extra permissions — enter the PIN.'; } } }catch(e){} applyLogo(); $('#buildTag').textContent='v'+BUILD; $('#gateSub').textContent='Calipokehouse · stock by location · v'+BUILD; })();
+</script>
+</body>
+</html>
