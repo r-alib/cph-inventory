@@ -197,7 +197,7 @@ tr.bad td{background:#1c1316} tr.bad .d{color:var(--err);font-weight:700} tr.goo
 
   <section id="screen-history" class="hide">
     <div class="topbar"><button class="btn ghost" id="hsBack">← Locations</button><h1 style="margin:0">🕘 History</h1><div class="spacer"></div><button class="btn sm" id="hsCsv">⬇ CSV</button></div>
-    <div class="row"><input id="hsQ" class="tinput" style="max-width:420px" placeholder="Filter by item, location, person…" autocomplete="off"><select id="hsKind" class="sel"><option value="">All kinds</option><option value="transfer">Transfers</option><option value="recv">Receivings</option><option value="adjust">Corrections</option><option value="sub">Sub-locations</option><option value="sale">Sales</option><option value="openbox">Opened boxes</option></select><span class="mini" id="hsInfo"></span></div>
+    <div class="row"><input id="hsQ" class="tinput" style="max-width:420px" placeholder="Filter by item, location, person…" autocomplete="off"><select id="hsKind" class="sel"><option value="">All kinds</option><option value="transfer">Transfers</option><option value="recv">Receivings</option><option value="adjust">Corrections</option><option value="sub">Sub-locations</option><option value="sale">Sales (all)</option><option value="ch:sale">· regular sales</option><option value="ch:bufp">· BUFP auctions</option><option value="ch:game">· game sales</option><option value="openbox">Opened boxes</option></select><span class="mini" id="hsInfo"></span></div>
     <div class="card" id="hsBody" style="margin-top:12px"></div>
   </section>
 </main>
@@ -221,13 +221,15 @@ tr.bad td{background:#1c1316} tr.bad .d{color:var(--err);font-weight:700} tr.goo
      discrepancies/{id}         {at, loc, item, name, exp, cnt, by, status:'open'|'fixed', note}
      ingest/transfers/{id}      transfers of the packstation project already posted here
      boxes/{ikey}               {pack: packIkey, packs: N, alts{N:true}, by, at}  — packs per box
+     shifts/{id}                streamer shift: {loc, kind:day|night, shiftDay, status:counting|open|closing|closed, by, startedAt, startCount, endCount, closedAt, report}
+     ledger events made during a shift carry shift:{id} and ch: sale|bufp|game
      subs/{id} for a game also: status planning|ready|live|ended|closed, start{}, sold{}, bundles/{bid}{name,items{}}, sales/{sid}
    Read-only from calipoke-packstation:
      packstation/stockCount/counts   → Warehouse stock (every location but STORE)
      packstation/transfers           → ready transfers become ledger events
    Day boundaries: calendar days (local time). Streamer rooms: day = day shift + night shift (build 3).
    ============================================================ */
-const BUILD='2026-11-10b · games';
+const BUILD='2026-11-10c · shifts';
 const INV_CONFIG={apiKey:"AIzaSyAsTYwU0qABmXKuYSpyendwHw3djJc-Bqo",authDomain:"calipoke-inventory.firebaseapp.com",databaseURL:"https://calipoke-inventory-default-rtdb.firebaseio.com",projectId:"calipoke-inventory",storageBucket:"calipoke-inventory.firebasestorage.app",messagingSenderId:"156640764541",appId:"1:156640764541:web:833f96e4b0849b53454714"};
 const STATION_CONFIG={apiKey:"AIzaSyB2I2sR9czF6F29OZMyEZubmwQGP7nWFlc",authDomain:"calipoke-packstation.firebaseapp.com",databaseURL:"https://calipoke-packstation-default-rtdb.firebaseio.com",projectId:"calipoke-packstation",storageBucket:"calipoke-packstation.firebasestorage.app",messagingSenderId:"125288117157",appId:"1:125288117157:web:461b4d553e100c07b9ae4c"};
 const ROOT='inv', STATION_PATH='packstation';
@@ -282,6 +284,7 @@ let LEDGER=[];                // sorted by ts asc
 let DISC={};                  // id -> discrepancy
 let COUNTS={};                // loc -> id -> count
 let BOXES={};                 // fbKey(boxIkey) -> {pack, packs, alts}
+let SHIFTS={};                // shiftId -> shift (streamer rooms)
 let INV_FB={};                // fbKey(ikey) -> ikey
 let WH={};                    // ikey -> qty (warehouse from packstation)
 let WH_RAW={}, WH_BASE=null;  // packstation stockCount counts / base
@@ -293,7 +296,7 @@ let actx=null;
 /* ---------- ui helpers ---------- */
 function beep(kind){ try{ actx=actx||new (window.AudioContext||window.webkitAudioContext)(); const o=actx.createOscillator(),g=actx.createGain(); o.connect(g); g.connect(actx.destination); const f={ok:[880,1320],err:[200,150],warn:[440,440]}[kind]||[600]; o.frequency.value=f[0]; if(f[1]) o.frequency.setValueAtTime(f[1],actx.currentTime+0.08); g.gain.setValueAtTime(0.0001,actx.currentTime); g.gain.exponentialRampToValueAtTime(0.18,actx.currentTime+0.01); g.gain.exponentialRampToValueAtTime(0.0001,actx.currentTime+0.18); o.start(); o.stop(actx.currentTime+0.2); }catch(e){} }
 function toast(msg,kind='info',ms=2800){ const ic={ok:'✓',err:'✕',warn:'!',info:'i'}; const el=document.createElement('div'); el.className='toast '+kind; el.innerHTML='<span class="ic">'+ic[kind]+'</span><span>'+esc(msg)+'</span>'; $('#toasts').appendChild(el); setTimeout(()=>{ el.style.transition='.25s'; el.style.opacity='0'; setTimeout(()=>el.remove(),250); },ms); }
-let _modal=null; function closeModal(){ if(_modal){ _modal.remove(); _modal=null; } }
+let _modal=null; function closeModal(){ if(_modal){ const m=_modal; _modal=null; try{ m.remove(); }catch(e){} } }
 function modal(html,wide){ closeModal(); const d=document.createElement('div'); d.className='modal'; d.innerHTML='<div class="mbox'+(wide?' wide':'')+'">'+html+'</div>'; document.body.appendChild(d); d.addEventListener('click',e=>{ if(e.target===d) closeModal(); }); _modal=d; return d; }
 document.addEventListener('click',e=>{ const t=e.target; if(t&&t.tagName==='IMG'&&t.closest('.irow,.pcard,.mpick')){ $('#lightboxImg').src=t.src; $('#lightbox').classList.remove('hide'); } });
 $('#lightbox').onclick=()=>$('#lightbox').classList.add('hide');
@@ -342,6 +345,7 @@ function connect(){
   R.child('discrepancies').on('value',s=>{ DISC=s.val()||{}; renderCurrent(); });
   R.child('counts').on('value',s=>{ COUNTS=s.val()||{}; renderCurrent(); });
   R.child('boxes').on('value',s=>{ BOXES=s.val()||{}; renderCurrent(); });
+  R.child('shifts').on('value',s=>{ SHIFTS=s.val()||{}; renderCurrent(); });
   /* Warehouse = the live inventory count of the station, every location except STORE */
   SDB.ref(STATION_PATH+'/stockCount/base').on('value',s=>{ WH_BASE=s.val()||null; rebuildWH(); });
   SDB.ref(STATION_PATH+'/stockCount/counts').on('value',s=>{ WH_RAW=s.val()||{}; rebuildWH(); });
@@ -369,7 +373,7 @@ async function bump(loc,k,delta){ if(!loc||loc==='warehouse'||!delta) return; aw
 /* ev: {item, name, qty, from, to, kind, note, ts?, src?, srcId?, key?} */
 async function postEvent(ev){
   const ts=ev.ts||Date.now(); const key=ev.key||null;
-  const rec={ts, day:dayOf(ts), item:ev.item, name:ev.name||itemInfo(ev.item).name, qty:+ev.qty, from:ev.from||null, to:ev.to||null, kind:ev.kind||'transfer', by:ev.by||MY_NAME, note:ev.note||'', src:ev.src||'page', srcId:ev.srcId||null, at:Date.now()};
+  const rec={ts, day:dayOf(ts), item:ev.item, name:ev.name||itemInfo(ev.item).name, qty:+ev.qty, from:ev.from||null, to:ev.to||null, kind:ev.kind||'transfer', by:ev.by||MY_NAME, note:ev.note||'', src:ev.src||'page', srcId:ev.srcId||null, shift:ev.shift||null, ch:ev.ch||null, at:Date.now()};
   Object.keys(rec).forEach(x=>{ if(rec[x]==null||rec[x]==='') delete rec[x]; });
   if(key){ const r=await R.child('ledger/'+key).transaction(c=>c?undefined:rec); if(!r.committed) return false; }
   else await R.child('ledger').push(rec);
@@ -465,19 +469,19 @@ async function returnSubAll(id){ const s=SUBS[id]; if(!s) return; const items=s.
 /* ============================================================
    COUNT a location (physical count vs system) — discrepancies
    ============================================================ */
-function openCount(loc){
+function openCount(loc,opts){ opts=opts||{};
   const expected=itemsAt(loc); const lines={}; Object.keys(expected).forEach(k=>lines[k]={exp:+expected[k],cnt:null});
   const draw=()=>{
     const keys=Object.keys(lines).sort((a,b)=>itemInfo(a).name.localeCompare(itemInfo(b).name));
     const counted=keys.filter(k=>lines[k].cnt!=null).length, diffs=keys.filter(k=>lines[k].cnt!=null&&lines[k].cnt!==lines[k].exp).length;
-    const d=modal('<h2>🔢 Count · '+esc(locName(loc))+'</h2><p class="sub" style="font-size:13px">Scan a product or type its name: a quantity box opens, what you enter is added to the count. Every line must be counted; a line that differs from the system becomes a discrepancy.</p>'+
+    const d=modal('<h2>'+(opts.title||'🔢 Count · '+locName(loc))+'</h2><p class="sub" style="font-size:13px">'+(opts.intro||'Scan a product or type its name: a quantity box opens, what you enter is added to the count. Every line must be counted; a line that differs from the system becomes a discrepancy.')+'</p>'+
       '<div class="scanwrap" style="margin-top:10px"><div class="scanrow" style="position:relative"><input id="ctScan" autocomplete="off" placeholder="Scan or type a product…"><button class="btn" id="ctCam">📷</button><div class="sugg hide" id="ctSugg"></div></div></div>'+
       '<div class="kvs"><div class="kv"><div class="n">'+keys.length+'</div><div class="l">lines</div></div><div class="kv '+(counted===keys.length?'ok':'warn')+'"><div class="n">'+counted+'</div><div class="l">counted</div></div><div class="kv '+(diffs?'err':'ok')+'"><div class="n">'+diffs+'</div><div class="l">differ</div></div></div>'+
       '<div class="tscroll" style="max-height:44vh"><table><thead><tr><th>Item</th><th class="num">System</th><th class="num">Counted</th><th class="num">Δ</th></tr></thead><tbody>'+
       (keys.length?keys.map(k=>{ const l=lines[k], it=itemInfo(k); const cls=l.cnt==null?'':(l.cnt===l.exp?'good':'bad'); return '<tr class="'+cls+'"><td class="name">'+esc(it.name)+(varOf(it.variation)?' <span class="mini">· '+esc(it.variation)+'</span>':'')+'</td><td class="num">'+fmt(l.exp)+'</td><td class="num"><input class="qi'+(l.cnt==null?'':(l.cnt===l.exp?' same':' diff'))+'" data-k="'+esc(k)+'" value="'+(l.cnt==null?'':l.cnt)+'" placeholder="—"></td><td class="num d">'+(l.cnt==null?'':((l.cnt-l.exp>0?'+':'')+(l.cnt-l.exp)))+'</td></tr>'; }).join(''):'<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:20px">Nothing here — scan what you find.</td></tr>')+'</tbody></table></div>'+
       '<div class="row" style="margin-top:14px"><button class="btn ghost" id="ctZero" title="Set every uncounted line to 0">Uncounted = 0</button><div class="spacer"></div><button class="btn ghost" id="ctX">Cancel</button>'+
-      (isAdmin()?'<button class="btn warn" id="ctApply" '+(counted<keys.length?'disabled':'')+'>✎ Apply corrections</button>':'')+
-      '<button class="btn primary" id="ctSave" '+(counted<keys.length?'disabled':'')+'>'+(diffs?'✓ Confirm with '+diffs+' discrepanc'+(diffs===1?'y':'ies'):'✓ Confirm — all match')+'</button></div>',true);
+      (isAdmin()&&!opts.noApply?'<button class="btn warn" id="ctApply" '+(counted<keys.length?'disabled':'')+'>✎ Apply corrections</button>':'')+
+      '<button class="btn primary" id="ctSave" '+(counted<keys.length?'disabled':'')+'>'+(diffs?'✓ Confirm with '+diffs+' discrepanc'+(diffs===1?'y':'ies'):'✓ Confirm — all match')+'</button></div>'+(counted<keys.length?'<p class="mini" style="margin-top:8px;color:var(--warn)">'+(keys.length-counted)+' line(s) not counted yet — every line must be counted before you can continue.</p>':''),true);
     d.querySelectorAll('.qi').forEach(i=>{ i.addEventListener('change',()=>{ const v=i.value.trim(); lines[i.dataset.k].cnt=v===''?null:Math.max(0,int(v)); draw(); }); i.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); i.blur(); } }); });
     d.querySelector('#ctZero').onclick=()=>{ keys.forEach(k=>{ if(lines[k].cnt==null) lines[k].cnt=0; }); draw(); };
     d.querySelector('#ctX').onclick=closeModal;
@@ -491,10 +495,10 @@ function openCount(loc){
     sc.addEventListener('input',sugg); sc.addEventListener('keydown',e=>{ if(e.key!=='Enter') return; e.preventDefault(); const v=norm(sc.value); if(!v) return; const bk=BC[v]; if(bk&&bk.length===1){ pick(bk[0]); return; } const rows=searchProducts(v,2); if(rows.length===1){ pick(rows[0].ikey); return; } if(bk&&bk.length>1){ pick(bk[0]); return; } beep('warn'); toast('Nothing matches "'+sc.value+'"','warn'); });
     sc.addEventListener('blur',()=>setTimeout(()=>sg.classList.add('hide'),150));
     d.querySelector('#ctCam').onclick=()=>openCam(code=>{ sc.value=code; sc.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter'})); });
-    const finish=async(apply)=>{ const id=R.child('counts/'+loc).push().key; const out={}; keys.forEach(k=>out[fbKey(k)]={exp:lines[k].exp,cnt:lines[k].cnt,item:k}); await R.child('counts/'+loc+'/'+id).set({at:Date.now(),by:MY_NAME,lines:out,applied:!!apply,diffs});
+    const finish=async(apply)=>{ const id=R.child('counts/'+loc).push().key; const out={}; keys.forEach(k=>out[fbKey(k)]={exp:lines[k].exp,cnt:lines[k].cnt,item:k}); await R.child('counts/'+loc+'/'+id).set({at:Date.now(),by:MY_NAME,lines:out,applied:!!apply,diffs,purpose:opts.purpose||'count',shift:opts.shift||null});
       for(const k of keys){ const l=lines[k]; if(l.cnt===l.exp) continue; if(apply){ const diff=l.cnt-l.exp; await postEvent({item:k,qty:Math.abs(diff),from:diff<0?loc:null,to:diff>0?loc:null,kind:'adjust',note:'count correction · '+locName(loc)}); }
-        else await R.child('discrepancies').push({at:Date.now(),loc,item:k,name:itemInfo(k).name,exp:l.exp,cnt:l.cnt,by:MY_NAME,status:'open',countId:id}); }
-      closeModal(); beep(diffs?'warn':'ok'); toast(apply?'Count applied · '+diffs+' line(s) corrected':(diffs?diffs+' discrepanc'+(diffs===1?'y':'ies')+' recorded for review':'Count confirmed — everything matches'),diffs&&!apply?'warn':'ok',4000); };
+        else await R.child('discrepancies').push({at:Date.now(),loc,item:k,name:itemInfo(k).name,exp:l.exp,cnt:l.cnt,by:MY_NAME,status:'open',countId:id,purpose:opts.purpose||'count',shift:opts.shift||null}); }
+      closeModal(); beep(diffs?'warn':'ok'); toast(apply?'Count applied · '+diffs+' line(s) corrected':(diffs?diffs+' discrepanc'+(diffs===1?'y':'ies')+' recorded for review':'Count confirmed — everything matches'),diffs&&!apply?'warn':'ok',4000); if(opts.onDone) opts.onDone({id,diffs,applied:!!apply,lines:out}); };
     d.querySelector('#ctSave').onclick=()=>finish(false); const ap=d.querySelector('#ctApply'); if(ap) ap.onclick=()=>{ if(confirm('Apply '+diffs+' correction(s) to the stock now?')) finish(true); };
     setTimeout(()=>sc.focus(),60);
   };
@@ -651,7 +655,7 @@ function addToBundle(k){ const s=SUBS[curGame]; const bl=s.bundles||{}; const id
   d.querySelectorAll('[data-b]').forEach(x=>x.onclick=()=>{ closeModal(); editBundle(x.dataset.b||null,k); }); }
 /* ---- selling inside a live game ---- */
 async function recordSale(rec){ await R.child('subs/'+curGame+'/sales').push(Object.assign({ts:Date.now(),by:MY_NAME},rec)); }
-async function sellUnits(k,n,note){ const sid='sub:'+curGame; await postEvent({item:INV_FB[k]||k,qty:n,from:sid,to:null,kind:'sale',note}); await R.child('subs/'+curGame+'/sold/'+fbKey(k)).transaction(c=>(+c||0)+n); }
+async function sellUnits(k,n,note){ const sid='sub:'+curGame; const sh=openShiftAt(SUBS[curGame].at); await postEvent({item:INV_FB[k]||k,qty:n,from:sid,to:null,kind:'sale',note,ch:'game',shift:sh?sh.id:null}); await R.child('subs/'+curGame+'/sold/'+fbKey(k)).transaction(c=>(+c||0)+n); }
 function askSell(k){ const s=SUBS[curGame]; const it=itemInfo(k); const have=+((s.items||{})[k]||0);
   const d=modal('<h2>💲 Sell</h2><div class="pcard">'+img(it.image)+'<div><div class="cn">'+esc(it.name)+'</div><div class="cv">'+esc(varOf(it.variation))+'</div><div class="cv">Left in the game: <b style="color:var(--ink)">'+fmt(have)+'</b></div></div></div><input id="slQ" class="bigqty" type="number" min="1" max="'+have+'" value="1"><div class="row"><button class="btn sm" data-q="1">+1</button><button class="btn sm" data-q="5">+5</button><button class="btn sm" data-q="10">+10</button></div><button class="btn primary lg" id="slOk" style="width:100%;margin-top:12px">💲 Sold</button>');
   const inp=d.querySelector('#slQ'); d.querySelectorAll('[data-q]').forEach(b=>b.onclick=()=>{ inp.value=int(inp.value)+(+b.dataset.q); });
@@ -663,9 +667,86 @@ function askSellBundle(bid){ const s=SUBS[curGame]; const b=(s.bundles||{})[bid]
   d.querySelector('#sbOk').onclick=ok; inp.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); ok(); } }); setTimeout(()=>{ inp.focus(); inp.select(); },50); }
 async function undoSale(id){ const s=SUBS[curGame]; const x=(s.sales||{})[id]; if(!x||x.reversed) return; if(!confirm('Reverse this sale ('+x.qty+' × '+x.name+')?')) return; const sid='sub:'+curGame;
   const lines=x.bundle?Object.keys(x.items||{}).map(k=>[k,x.qty*(+x.items[k]||1)]):[[x.item,x.qty]];
-  for(const [k,n] of lines){ await postEvent({item:INV_FB[k]||k,qty:n,from:null,to:sid,kind:'sale',note:'↩ sale reversed · '+s.name}); await R.child('subs/'+curGame+'/sold/'+fbKey(k)).transaction(c=>((+c||0)-n)||null); }
+  for(const [k,n] of lines){ const sh=openShiftAt(s.at); await postEvent({item:INV_FB[k]||k,qty:n,from:null,to:sid,kind:'sale',note:'↩ sale reversed · '+s.name,ch:'game',shift:sh?sh.id:null}); await R.child('subs/'+curGame+'/sold/'+fbKey(k)).transaction(c=>((+c||0)-n)||null); }
   if(x.bundle) await R.child('subs/'+curGame+'/soldBundles/'+x.bundle).transaction(c=>((+c||0)-x.qty)||null);
   await R.child('subs/'+curGame+'/sales/'+id).update({reversed:true,reversedBy:MY_NAME,reversedAt:Date.now()}); toast('Sale reversed','ok'); }
+
+/* ============================================================
+   STREAMER SHIFT — opening count gate · sales / BUFP / game · closing count · report
+   ============================================================ */
+const SHIFT_KINDS={day:'☀️ Day shift',night:'🌙 Night shift'};
+function openShiftAt(loc){ for(const id in SHIFTS){ const s=SHIFTS[id]; if(s&&s.loc===loc&&s.status!=='closed') return Object.assign({id},s); } return null; }
+function shiftsOf(loc,day){ return Object.keys(SHIFTS).map(id=>Object.assign({id},SHIFTS[id])).filter(s=>s.loc===loc&&(!day||s.shiftDay===day)).sort((a,b)=>(a.startedAt||0)-(b.startedAt||0)); }
+/* main stock of a location (without sub-locations) at a moment */
+function mainAtTime(loc,ts){ const m=itemsAt(loc); for(let i=LEDGER.length-1;i>=0;i--){ const e=LEDGER[i]; if((e.ts||0)<=ts) break; const ik=fbKey(e.item); if(e.from===loc&&e.to!==loc) m[ik]=(m[ik]||0)+e.qty; if(e.to===loc&&e.from!==loc) m[ik]=(m[ik]||0)-e.qty; } for(const k in m) if(!m[k]) delete m[k]; return m; }
+function shiftFigures(sh){ const f={sale:{},bufp:{},game:{},inn:{},out:{}}; const t0=sh.startedAt||0, t1=sh.closedAt||Date.now();
+  LEDGER.forEach(e=>{ const k=fbKey(e.item); if(e.shift===sh.id&&e.kind==='sale'){ const ch=f[e.ch]?e.ch:'sale'; f[ch][k]=(f[ch][k]||0)+(e.from?1:-1)*e.qty; return; } if(e.ts<t0||e.ts>=t1||e.kind==='sale') return; if(e.to===sh.loc&&e.from!==sh.loc) f.inn[k]=(f.inn[k]||0)+e.qty; if(e.from===sh.loc&&e.to!==sh.loc) f.out[k]=(f.out[k]||0)+e.qty; });
+  f.open=mainAtTime(sh.loc,sh.startedAt||0); f.close=sh.closedAt?mainAtTime(sh.loc,sh.closedAt):itemsAt(sh.loc); return f; }
+function startShift(loc){
+  const today=dayOf(Date.now()); const todays=shiftsOf(loc,today); const sugg=todays.some(s=>s.kind==='day')?'night':'day';
+  const d=modal('<h2>▶ Start shift · '+esc(locName(loc))+'</h2><p class="sub" style="font-size:13px">The shift begins with a full count of the room. It must match the opening stock; a difference can be confirmed as a discrepancy and is fixed later by Admin / Celina.</p>'+
+    '<div class="fld"><label>Shift</label><div class="seg" id="ssKind">'+Object.keys(SHIFT_KINDS).map(k=>'<button data-k="'+k+'"'+(k===sugg?' class="on"':'')+'>'+SHIFT_KINDS[k]+'</button>').join('')+'</div></div>'+
+    '<div class="fld"><label>Business day</label><input id="ssDay" class="tinput" type="date" value="'+today+'" style="font-family:var(--body);color-scheme:dark"></div>'+
+    (todays.length?'<p class="mini">Today already: '+todays.map(s=>SHIFT_KINDS[s.kind]+' ('+s.status+', '+esc(s.by)+')').join(', ')+'</p>':'')+
+    '<div class="row" style="margin-top:16px"><button class="btn primary lg" id="ssGo" style="flex:1">Start → opening count</button><button class="btn ghost" id="ssX">Cancel</button></div>');
+  let kind=sugg; d.querySelectorAll('#ssKind button').forEach(b=>b.onclick=()=>{ kind=b.dataset.k; d.querySelectorAll('#ssKind button').forEach(x=>x.classList.toggle('on',x===b)); });
+  d.querySelector('#ssX').onclick=closeModal;
+  d.querySelector('#ssGo').onclick=async()=>{ const day=d.querySelector('#ssDay').value||today; if(shiftsOf(loc,day).some(s=>s.kind===kind&&s.status!=='closed')){ toast('That shift is already open','warn'); return; } if(shiftsOf(loc,day).some(s=>s.kind===kind&&s.status==='closed')&&!confirm('A '+kind+' shift for '+day+' is already closed. Open another one?')) return;
+    const ref=R.child('shifts').push(); await ref.set({loc,kind,shiftDay:day,status:'counting',by:MY_NAME,startedAt:Date.now()}); closeModal(); shiftOpeningCount(ref.key); };
+}
+function shiftOpeningCount(id){ const sh=SHIFTS[id]||{}; openCount(sh.loc||curLoc,{title:'🔢 Opening count · '+SHIFT_KINDS[sh.kind]+' · '+locName(sh.loc),intro:'Count everything in the room (scan or type). The count must match the opening stock. If something differs, you can confirm it as a discrepancy — it is recorded and fixed later.',purpose:'shift-start',shift:id,noApply:true,
+  onDone:async r=>{ await R.child('shifts/'+id).update({status:'open',openedAt:Date.now(),startCount:{id:r.id,diffs:r.diffs,at:Date.now()}}); toast(SHIFT_KINDS[sh.kind]+' started'+(r.diffs?' with '+r.diffs+' discrepancy(ies)':''),r.diffs?'warn':'ok',4000); }}); }
+async function cancelShift(id){ const sh=SHIFTS[id]; if(!sh||sh.status!=='counting') return; if(!confirm('Cancel this shift? Nothing was sold yet.')) return; await R.child('shifts/'+id).remove(); }
+function endShift(id){ const sh=SHIFTS[id]; if(!sh) return; const f=shiftFigures(Object.assign({id},sh));
+  if(!confirm('End '+SHIFT_KINDS[sh.kind]+'?\nSold '+fmt(unitsOf(f.sale))+' · BUFP '+fmt(unitsOf(f.bufp))+' · game '+fmt(unitsOf(f.game))+'\nNext: the closing count of the room.')) return;
+  R.child('shifts/'+id).update({status:'closing'});
+  shiftClosingCount(id); }
+function shiftClosingCount(id){ const sh=SHIFTS[id]||{}; openCount(sh.loc,{title:'🔢 Closing count · '+SHIFT_KINDS[sh.kind]+' · '+locName(sh.loc),intro:'Count the room again. The system already deducted this shift\'s sales and auctions, so the count should match what is on the shelf now.',purpose:'shift-end',shift:id,noApply:true,
+  onDone:async r=>{ const now=Date.now(); const f=shiftFigures(Object.assign({id,closedAt:now},sh)); const rep={open:unitsOf(f.open),close:unitsOf(f.close),inn:unitsOf(f.inn),out:unitsOf(f.out),sale:unitsOf(f.sale),bufp:unitsOf(f.bufp),game:unitsOf(f.game),startDiffs:(sh.startCount||{}).diffs||0,endDiffs:r.diffs};
+    await R.child('shifts/'+id).update({status:'closed',closedAt:now,closedBy:MY_NAME,endCount:{id:r.id,diffs:r.diffs,at:now},report:rep}); beep('ok'); openShiftReport(id); }}); }
+function openShiftReport(id){ const sh=Object.assign({id},SHIFTS[id]); const f=shiftFigures(sh); const cnt=((COUNTS[sh.loc]||{})[(sh.endCount||{}).id]||{}).lines||{}; const counted={}; Object.values(cnt).forEach(l=>{ if(l&&l.item!=null) counted[fbKey(l.item)]=l.cnt; });
+  const keys=[...new Set([...Object.keys(f.open),...Object.keys(f.close),...Object.keys(f.sale),...Object.keys(f.bufp),...Object.keys(f.game),...Object.keys(f.inn),...Object.keys(f.out)])].sort((a,b)=>itemInfo(a).name.localeCompare(itemInfo(b).name));
+  const rows=keys.map(k=>({k,n:itemInfo(k).name+(varOf(itemInfo(k).variation)?' · '+itemInfo(k).variation:''),open:f.open[k]||0,inn:f.inn[k]||0,out:f.out[k]||0,sale:f.sale[k]||0,bufp:f.bufp[k]||0,game:f.game[k]||0,close:f.close[k]||0,cnt:counted[k]}));
+  const rep=sh.report||{open:unitsOf(f.open),close:unitsOf(f.close),sale:unitsOf(f.sale),bufp:unitsOf(f.bufp),game:unitsOf(f.game),inn:unitsOf(f.inn),out:unitsOf(f.out)};
+  const d=modal('<h2>📋 Shift report · '+esc(locName(sh.loc))+'</h2><p class="sub" style="font-size:13px">'+SHIFT_KINDS[sh.kind]+' · '+esc(sh.shiftDay)+' · '+esc(sh.by)+' · '+esc(fmtTime(sh.startedAt))+' → '+(sh.closedAt?esc(fmtTime(sh.closedAt)):'<b style="color:var(--err)">open</b>')+(sh.startCount&&sh.startCount.diffs?' · <span class="badge warn">'+sh.startCount.diffs+' opening discrepancy(ies)</span>':'')+(sh.endCount&&sh.endCount.diffs?' · <span class="badge err">'+sh.endCount.diffs+' closing discrepancy(ies)</span>':'')+'</p>'+
+    '<div class="kvs"><div class="kv"><div class="n">'+fmt(rep.open)+'</div><div class="l">opening</div></div><div class="kv ok"><div class="n">'+fmt(rep.sale)+'</div><div class="l">sales</div></div><div class="kv warn"><div class="n">'+fmt(rep.bufp)+'</div><div class="l">BUFP</div></div><div class="kv" style="border-color:#3a2d5c"><div class="n" style="color:var(--sub)">'+fmt(rep.game)+'</div><div class="l">game (from the game sub-location)</div></div><div class="kv info"><div class="n">'+fmt(rep.close)+'</div><div class="l">closing</div></div></div>'+
+    '<div class="tscroll" style="max-height:48vh"><table><thead><tr><th>Item</th><th class="num">Open</th><th class="num">In</th><th class="num">Out</th><th class="num">Sales</th><th class="num">BUFP</th><th class="num">Game</th><th class="num">Close</th><th class="num">Counted</th><th class="num">Δ</th></tr></thead><tbody>'+(rows.length?rows.map(r=>{ const dd=r.cnt==null?null:r.cnt-r.close; return '<tr class="'+(dd?'bad':'')+'"><td class="name">'+esc(r.n)+'</td><td class="num">'+fmt(r.open)+'</td><td class="num" style="color:var(--ok)">'+(r.inn?'+'+fmt(r.inn):'')+'</td><td class="num" style="color:var(--err)">'+(r.out?'−'+fmt(r.out):'')+'</td><td class="num">'+(r.sale?fmt(r.sale):'')+'</td><td class="num">'+(r.bufp?fmt(r.bufp):'')+'</td><td class="num" style="color:var(--sub)">'+(r.game?fmt(r.game):'')+'</td><td class="num"><b>'+fmt(r.close)+'</b></td><td class="num">'+(r.cnt==null?'—':fmt(r.cnt))+'</td><td class="num d">'+(dd==null?'':(dd>0?'+':'')+dd)+'</td></tr>'; }).join(''):'<tr><td colspan="10" style="text-align:center;color:var(--muted);padding:20px">Nothing moved.</td></tr>')+'</tbody></table></div>'+
+    '<p class="mini" style="margin-top:8px">Open / In / Out / Sales / BUFP / Close are the room\'s own stock. Game sales come out of the game sub-location, not the room\'s shelf, so they are shown separately. Daily SOH records bundles and games under BUFP — keep that in mind when comparing.</p>'+
+    '<div class="row" style="margin-top:12px"><button class="btn" id="srCsv">⬇ CSV</button><div class="spacer"></div><button class="btn ghost" onclick="closeModal()">Close</button></div>',true);
+  d.querySelector('#srCsv').onclick=()=>csv([['Item','Open','In','Out','Sales','BUFP','Game','Close','Counted','Diff']].concat(rows.map(r=>[r.n,r.open,r.inn,r.out,r.sale,r.bufp,r.game,r.close,r.cnt==null?'':r.cnt,r.cnt==null?'':r.cnt-r.close])),'shift_'+sh.loc+'_'+sh.shiftDay+'_'+sh.kind+'.csv'); }
+/* ---- selling from the room's shelf during a shift ---- */
+function openRoomSale(loc,ch){ const sh=openShiftAt(loc); if(!sh||sh.status!=='open'){ toast('Start the shift first (opening count)','warn'); return; } const label=ch==='bufp'?'🔨 BUFP auction':'💲 Sale';
+  const draw=()=>{ const items=itemsAt(loc); const recent=LEDGER.filter(e=>e.shift===sh.id&&e.kind==='sale'&&(e.ch||'sale')===ch).slice().reverse().slice(0,12); const tot=unitsOf(shiftFigures(sh)[ch]);
+    const d=modal('<h2>'+label+' · '+esc(locName(loc))+'</h2><p class="sub" style="font-size:13px">'+SHIFT_KINDS[sh.kind]+' · '+esc(sh.by)+' · this shift: <b style="color:var(--ink)">'+fmt(tot)+'</b> units '+(ch==='bufp'?'auctioned':'sold')+'</p>'+
+      '<div class="scanwrap" style="margin-top:10px"><div class="scanrow" style="position:relative"><input id="rsScan" autocomplete="off" placeholder="Scan or type a product on the shelf…"><button class="btn" id="rsCam">📷</button><div class="sugg hide" id="rsSugg"></div></div></div>'+
+      (recent.length?'<div class="card" style="padding:6px 14px">'+recent.map(e=>'<div class="logrow"><span class="lt">'+esc(fmtTime(e.ts))+'</span><span><b>'+esc(e.name)+'</b>'+(e.to?' <span class="badge muted">reversed</span>':'')+'</span><span class="lq">'+(e.to?'−':'')+fmt(e.qty)+(e.from&&!e.undone?' <button class="btn sm ghost" data-rundo="'+e.id+'" title="Reverse">↩</button>':'')+'</span></div>').join('')+'</div>':'<div class="empty" style="padding:14px">Nothing yet — scan the first item.</div>')+
+      '<button class="btn ghost" id="rsX" style="width:100%;margin-top:12px">Done</button>');
+    d.querySelector('#rsX').onclick=closeModal; const sc=d.querySelector('#rsScan'), sg=d.querySelector('#rsSugg');
+    const cand=v=>{ const nv=norm(v); const out=[]; (BC[nv]||[]).forEach(k=>{ if(items[fbKey(k)]) out.push(fbKey(k)); }); Object.keys(items).forEach(k=>{ if(+items[k]&&!out.includes(k)&&(norm(itemInfo(k).name).includes(nv)||norm(itemInfo(k).variation).includes(nv))) out.push(k); }); return out.slice(0,12); };
+    const pick=k=>{ sc.value=''; sg.classList.add('hide'); const it=itemInfo(k); const have=+items[k]||0;
+      const q=modal('<h2>'+label+'</h2><div class="pcard">'+img(it.image)+'<div><div class="cn">'+esc(it.name)+'</div><div class="cv">'+esc(varOf(it.variation))+'</div><div class="cv">On the shelf: <b style="color:var(--ink)">'+fmt(have)+'</b></div></div></div><input id="rqQ" class="bigqty" type="number" min="1" value="1"><div class="row"><button class="btn sm" data-q="1">+1</button><button class="btn sm" data-q="5">+5</button><button class="btn sm" data-q="10">+10</button></div><button class="btn primary lg" id="rqOk" style="width:100%;margin-top:12px">'+(ch==='bufp'?'🔨 Auctioned':'💲 Sold')+'</button>');
+      const inp=q.querySelector('#rqQ'); q.querySelectorAll('[data-q]').forEach(b=>b.onclick=()=>{ inp.value=int(inp.value)+(+b.dataset.q); });
+      const ok=async()=>{ const n=int(inp.value); if(n<1) return; if(n>have&&!confirm('Only '+fmt(have)+' on the shelf. Record '+n+' anyway?')) return; q.querySelector('#rqOk').disabled=true; await postEvent({item:INV_FB[k]||k,qty:n,from:loc,to:null,kind:'sale',ch,shift:sh.id,note:(ch==='bufp'?'BUFP · ':'sale · ')+SHIFT_KINDS[sh.kind]}); beep('ok'); toast((ch==='bufp'?'🔨 ':'💲 ')+n+' × '+it.name,'ok',1500); draw(); };
+      q.querySelector('#rqOk').onclick=ok; inp.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); ok(); } }); setTimeout(()=>{ inp.focus(); inp.select(); },50); };
+    sc.addEventListener('input',()=>{ const v=sc.value.trim(); const rows=v?cand(v):[]; if(!rows.length){ sg.classList.add('hide'); return; } sg.innerHTML=rows.map((k,i)=>'<button class="mpick" data-i="'+i+'">'+img(itemInfo(k).image)+'<div><div class="pn">'+esc(itemInfo(k).name)+'</div><div class="pv">'+esc(varOf(itemInfo(k).variation))+'</div></div><span class="pt here">'+fmt(items[k])+'</span></button>').join(''); sg.classList.remove('hide'); sg.querySelectorAll('.mpick').forEach(b=>b.onmousedown=e=>{ e.preventDefault(); pick(rows[+b.dataset.i]); }); });
+    sc.addEventListener('blur',()=>setTimeout(()=>sg.classList.add('hide'),150));
+    sc.addEventListener('keydown',e=>{ if(e.key!=='Enter') return; e.preventDefault(); const v=sc.value.trim(); if(!v) return; const rows=cand(v); if(rows.length===1||(BC[norm(v)]||[]).length){ pick(rows[0]||fbKey(BC[norm(v)][0])); return; } if(!rows.length){ beep('err'); toast('Not on this shelf: "'+v+'"','err'); } });
+    d.querySelector('#rsCam').onclick=()=>openCam(code=>{ sc.value=code; sc.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter'})); });
+    d.querySelectorAll('[data-rundo]').forEach(b=>b.onclick=async()=>{ const e=LEDGER.find(x=>x.id===b.dataset.rundo); if(!e||!confirm('Reverse '+e.qty+' × '+e.name+'?')) return; await postEvent({item:e.item,qty:e.qty,from:null,to:loc,kind:'sale',ch,shift:sh.id,note:'↩ reversed'}); await R.child('ledger/'+e.id+'/undone').set(true); draw(); });
+    setTimeout(()=>sc.focus(),60); };
+  draw(); }
+function shiftBarHTML(loc){ const sh=openShiftAt(loc); if(!sh) return '<div class="note info" style="margin:0 0 12px;display:flex;gap:12px;align-items:center;flex-wrap:wrap"><span>No shift open in this room. Sales and auctions are recorded inside a shift, which starts with a count.</span><div class="spacer"></div><button class="btn primary sm" data-shstart="1">▶ Start shift</button></div>';
+  if(sh.status==='counting') return '<div class="note" style="margin:0 0 12px;display:flex;gap:12px;align-items:center;flex-wrap:wrap"><span>'+SHIFT_KINDS[sh.kind]+' · '+esc(sh.by)+' — <b>opening count not finished</b>.</span><div class="spacer"></div><button class="btn primary sm" data-shcount="'+sh.id+'">🔢 Resume opening count</button><button class="btn ghost sm" data-shcancel="'+sh.id+'">✕ Cancel shift</button></div>';
+  if(sh.status==='closing') return '<div class="note" style="margin:0 0 12px;display:flex;gap:12px;align-items:center;flex-wrap:wrap"><span>'+SHIFT_KINDS[sh.kind]+' · '+esc(sh.by)+' — <b>closing count not finished</b>.</span><div class="spacer"></div><button class="btn primary sm" data-shclose2="'+sh.id+'">🔢 Resume closing count</button></div>';
+  const f=shiftFigures(sh);
+  return '<div class="card" style="margin-bottom:12px;border-color:#2a4a36"><div class="row"><span class="gstat live">live</span><b>'+SHIFT_KINDS[sh.kind]+'</b><span class="mini">'+esc(sh.shiftDay)+' · '+esc(sh.by)+' · since '+esc(fmtTime(sh.openedAt||sh.startedAt))+(sh.startCount&&sh.startCount.diffs?' · <span class="badge warn">'+sh.startCount.diffs+' opening discrepancy(ies)</span>':'')+'</span><div class="spacer"></div><span class="pill">sales <b>'+fmt(unitsOf(f.sale))+'</b></span><span class="pill">BUFP <b>'+fmt(unitsOf(f.bufp))+'</b></span><span class="pill">game <b>'+fmt(unitsOf(f.game))+'</b></span></div>'+
+    '<div class="row" style="margin-top:12px"><button class="btn primary" data-shsale="sale">💲 Sale</button><button class="btn warn" data-shsale="bufp">🔨 BUFP auction</button><span class="mini">Games: open the game on the Sub-locations tab and press Start game / Sell.</span><div class="spacer"></div><button class="btn sm ghost" data-shrep="'+sh.id+'">📋</button><button class="btn danger sm" data-shend="'+sh.id+'">■ End shift</button></div></div>'; }
+function wireShiftBar(loc){ const h=$('#lcBody'); const q=s=>h.querySelector(s); const a=q('[data-shstart]'); if(a) a.onclick=()=>startShift(loc); const c=q('[data-shcount]'); if(c) c.onclick=()=>shiftOpeningCount(c.dataset.shcount); const x=q('[data-shcancel]'); if(x) x.onclick=()=>cancelShift(x.dataset.shcancel); const c2=q('[data-shclose2]'); if(c2) c2.onclick=()=>shiftClosingCount(c2.dataset.shclose2);
+  h.querySelectorAll('[data-shsale]').forEach(b=>b.onclick=()=>openRoomSale(loc,b.dataset.shsale)); const e=q('[data-shend]'); if(e) e.onclick=()=>endShift(e.dataset.shend); const r=q('[data-shrep]'); if(r) r.onclick=()=>openShiftReport(r.dataset.shrep); }
+function shiftsDayHTML(loc,day){ const list=shiftsOf(loc,day); const closedDay=list.some(s=>s.kind==='night'&&s.status==='closed');
+  return '<div class="card" style="margin-top:12px"><div class="row"><h2 style="margin:0">Shifts · '+esc(day)+'</h2>'+(closedDay?'<span class="badge ok">day closed</span>':list.length?'<span class="badge warn">day open — closes after the night shift</span>':'<span class="badge muted">no shifts</span>')+'</div>'+
+    (list.length?'<div class="list">'+list.map(s=>{ const r=s.report||(s.status!=='closed'?(()=>{ const f=shiftFigures(s); return {open:unitsOf(f.open),sale:unitsOf(f.sale),bufp:unitsOf(f.bufp),game:unitsOf(f.game),close:unitsOf(f.close)}; })():{});
+      return '<div class="irow" style="grid-template-columns:1fr auto auto"><div><div class="nm">'+SHIFT_KINDS[s.kind]+' <span class="gstat '+(s.status==='closed'?'ended':'live')+'">'+esc(s.status)+'</span></div><div class="vr">'+esc(s.by)+' · '+esc(fmtTime(s.startedAt))+(s.closedAt?' → '+esc(fmtTime(s.closedAt)):'')+((s.startCount||{}).diffs?' · opening Δ '+s.startCount.diffs:'')+((s.endCount||{}).diffs?' · closing Δ '+s.endCount.diffs:'')+'</div></div><div class="q3"><span>open<b>'+fmt(r.open||0)+'</b></span><span>sales<b style="color:var(--ok)">'+fmt(r.sale||0)+'</b></span><span>BUFP<b style="color:var(--warn)">'+fmt(r.bufp||0)+'</b></span><span>game<b style="color:var(--sub)">'+fmt(r.game||0)+'</b></span><span>close<b>'+fmt(r.close||0)+'</b></span></div><div class="acts"><button class="btn sm" data-shrep="'+s.id+'">📋 Report</button></div></div>'; }).join('')+'</div>':'')+'</div>'; }
 
 /* ============================================================
    RENDER — menu
@@ -674,7 +755,7 @@ function renderMenu(){
   $('#menuWho').textContent=MY_NAME+' · '+MY_ROLE;
   const openDisc=Object.values(DISC).filter(d=>d.status==='open').length; $('#mDiscN').textContent=openDisc; $('#mDiscN').classList.toggle('hide',!openDisc);
   $('#tiles').innerHTML=LOCS.map(l=>{ const m=totalsAt(l.id); const subs=subsAt(l.id); const n=Object.keys(m).filter(k=>m[k]).length;
-    const badges=(subs.length?'<span class="badge sub">'+subs.length+' sub-location'+(subs.length>1?'s':'')+'</span> ':'')+(Object.values(DISC).filter(d=>d.status==='open'&&d.loc===l.id).length?'<span class="badge err">discrepancies</span>':'');
+    const sh=l.kind==='stream'?openShiftAt(l.id):null; const badges=(sh?'<span class="badge '+(sh.status==='open'?'ok':'warn')+'">'+(sh.status==='open'?'● live · ':'')+SHIFT_KINDS[sh.kind]+' · '+esc(sh.by)+'</span> ':'')+(subs.length?'<span class="badge sub">'+subs.length+' sub-location'+(subs.length>1?'s':'')+'</span> ':'')+(Object.values(DISC).filter(d=>d.status==='open'&&d.loc===l.id).length?'<span class="badge err">discrepancies</span>':'');
     return '<button class="tile" data-loc="'+l.id+'"><div class="micon">'+l.icon+'</div><div><div class="mname">'+esc(l.name.toUpperCase())+'</div><div class="mdesc">'+esc(l.desc)+'</div>'+(badges?'<div style="margin-top:7px">'+badges+'</div>':'')+'</div><div class="kpi">'+fmt(unitsOf(m))+'<small>'+n+' items</small></div></button>'; }).join('');
   $$('#tiles [data-loc]').forEach(b=>b.onclick=()=>openLoc(b.dataset.loc));
   const notes=[]; if(!DSOH&&DSOH_ERR) notes.push('<div class="note err">Daily SOH could not be read: '+esc(DSOH_ERR)+'</div>');
@@ -697,12 +778,14 @@ function renderStock(body){
   keys.sort((a,b)=>itemInfo(a).name.localeCompare(itemInfo(b).name));
   const whNote=curLoc==='warehouse'?'<div class="note info">Warehouse stock is the live inventory count of CALIPOKE STATION (every location except the store). It is read-only here — shelves, pallets and in-warehouse moves live in <a href="'+WAREHOUSE_PLAN_URL+'" target="_blank">Warehouse Plan</a>; stock leaves the warehouse through a <a href="'+TRANSFER_APP_URL+'" target="_blank">Transfer Request</a>.</div>':'';
   const stNote=curLoc==='stockroom'?'<p class="mini" style="margin-top:8px"><b style="color:var(--ok)">Ready</b> = can be used · <b style="color:var(--warn)">Reserved</b> = an approved Transfer Request is waiting to be prepared · a product that is 0 here but exists in another location shows up in the search with where it is.</p>':'';
-  body.innerHTML='<div class="row"><input id="lcQ" class="tinput" style="max-width:380px" placeholder="Find, scan or type a barcode…" value="'+esc(lcQ)+'" autocomplete="off"><button class="btn sm" id="lcCam">📷</button>'+(isAdmin()&&curLoc!=='warehouse'?'<button class="btn sm ghost" id="lcAdd">＋ Add / correct a product</button>':'')+'</div>'+whNote+stNote+
+  const shiftBar=(LOC_BY_ID[curLoc]||{}).kind==='stream'?shiftBarHTML(curLoc):'';
+  body.innerHTML=shiftBar+'<div class="row"><input id="lcQ" class="tinput" style="max-width:380px" placeholder="Find, scan or type a barcode…" value="'+esc(lcQ)+'" autocomplete="off"><button class="btn sm" id="lcCam">📷</button>'+(isAdmin()&&curLoc!=='warehouse'?'<button class="btn sm ghost" id="lcAdd">＋ Add / correct a product</button>':'')+'</div>'+whNote+stNote+
     '<div class="list" id="lcList">'+(keys.length?keys.map(k=>rowHTML(k,m[k],res[k]||0)).join(''):'<div class="empty">'+(q?'Nothing matches. '+elsewhereHTML(q):'Nothing in '+esc(locName(curLoc))+' yet.')+'</div>')+'</div>'+(q&&keys.length?'<div class="mini" style="margin-top:10px">'+elsewhereHTML(q)+'</div>':'');
   const inp=$('#lcQ'); inp.addEventListener('input',()=>{ lcQ=inp.value; const pos=inp.selectionStart; renderStock(body); const n=$('#lcQ'); n.focus(); try{ n.setSelectionRange(pos,pos); }catch(e){} });
   inp.addEventListener('keydown',e=>{ if(e.key==='Enter'){ const bk=BC[norm(inp.value)]; if(bk&&bk.length){ lcQ=itemInfo(bk[0]).name; renderStock(body); } } });
   $('#lcCam').onclick=()=>openCam(code=>{ lcQ=code; renderStock(body); });
   const ad=$('#lcAdd'); if(ad) ad.onclick=()=>openAddItem(curLoc);
+  if(shiftBar) wireShiftBar(curLoc);
   wireRows('#lcList',curLoc);
 }
 function elsewhereHTML(q){ const rows=searchProducts(q,8); const parts=[]; rows.forEach(v=>{ const where=[]; LOCS.forEach(l=>{ const b=balAt(l.id,v.ikey); if(b) where.push(locName(l.id)+' '+fmt(b)); }); subsAt(null); Object.keys(SUBS).forEach(id=>{ const s=SUBS[id]; if(s.status!=='closed'&&s.items&&+s.items[v.ikey]) where.push('🧺 '+s.name+' '+fmt(+s.items[v.ikey])); }); if(where.length) parts.push('<b>'+esc(v.name)+(varOf(v.variation)?' · '+esc(v.variation):'')+'</b>: '+esc(where.join(' · '))); }); return parts.length?'Also in: '+parts.join('<br>')+(curLoc==='stockroom'?'<br><span style="color:var(--warn)">Not here — request a transfer first.</span>':''):'Not in any location.'; }
@@ -740,10 +823,11 @@ function renderDays(body){
   body.innerHTML='<div class="daybar"><span class="mini">Day</span><input type="date" id="dyDate" value="'+sel+'" max="'+days[0]+'"><div class="seg">'+days.slice(0,7).map(d=>'<button data-d="'+d+'"'+(d===sel?' class="on"':'')+'>'+d.slice(5)+'</button>').join('')+'</div></div>'+
     '<div class="kvs" style="margin-top:12px"><div class="kv"><div class="n">'+fmt(unitsOf(open))+'</div><div class="l">opening</div></div><div class="kv ok"><div class="n">+'+fmt(unitsOf(inn))+'</div><div class="l">in</div></div><div class="kv err"><div class="n">−'+fmt(unitsOf(out))+'</div><div class="l">out</div></div><div class="kv info"><div class="n">'+fmt(unitsOf(close))+'</div><div class="l">closing'+(sel===days[0]?' (now)':'')+'</div></div></div>'+
     '<div class="tscroll" style="max-height:52vh"><table><thead><tr><th>Item</th><th class="num">Opening</th><th class="num">In</th><th class="num">Out</th><th class="num">Closing</th></tr></thead><tbody>'+(keys.length?keys.map(k=>'<tr><td class="name">'+esc(itemInfo(k).name)+(varOf(itemInfo(k).variation)?' <span class="mini">· '+esc(itemInfo(k).variation)+'</span>':'')+'</td><td class="num">'+fmt(open[k]||0)+'</td><td class="num" style="color:var(--ok)">'+(inn[k]?'+'+fmt(inn[k]):'')+'</td><td class="num" style="color:var(--err)">'+(out[k]?'−'+fmt(out[k]):'')+'</td><td class="num"><b>'+fmt(close[k]||0)+'</b></td></tr>').join(''):'<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:20px">Nothing on this day.</td></tr>')+'</tbody></table></div>'+
-    '<p class="mini" style="margin-top:10px">Opening = closing of the previous day. Figures are recomputed from the movement journal, so a correction entered for an earlier day (admin, in the Move dialog) changes every day after it. Streamer rooms will switch to shift-based days (day + night) in the next build.</p>';
+    '<p class="mini" style="margin-top:10px">Opening = closing of the previous day. Figures are recomputed from the movement journal, so a correction entered for an earlier day (admin, in the Move dialog) changes every day after it.'+((LOC_BY_ID[curLoc]||{}).kind==='stream'?' In a streamer room the day is made of a day shift and a night shift — the day is closed once the night shift is closed.':'')+'</p>'+((LOC_BY_ID[curLoc]||{}).kind==='stream'?shiftsDayHTML(curLoc,sel):'');
+  body.querySelectorAll('[data-shrep]').forEach(b=>b.onclick=()=>openShiftReport(b.dataset.shrep));
   body.querySelector('#dyDate').onchange=e=>{ body.dataset.day=e.target.value; renderDays(body); }; body.querySelectorAll('[data-d]').forEach(b=>b.onclick=()=>{ body.dataset.day=b.dataset.d; renderDays(body); });
 }
-function kindLabel(e){ return {transfer:'⇄ Transfer',sub:'🧺 Sub-location',adjust:'✎ Correction',sale:'💲 Sale',openbox:'📦 Open box',recv:'📥 Receiving'}[e.kind]||e.kind; }
+function kindLabel(e){ if(e.kind==='sale'&&e.ch==='bufp') return '🔨 BUFP'; if(e.kind==='sale'&&e.ch==='game') return '🎲 Game sale'; return {transfer:'⇄ Transfer',sub:'🧺 Sub-location',adjust:'✎ Correction',sale:'💲 Sale',openbox:'📦 Open box',recv:'📥 Receiving'}[e.kind]||e.kind; }
 function logRowHTML(e){ return '<div class="logrow"><span class="lt">'+esc(fmtTime(e.ts))+'<br>'+esc(e.by||'')+'</span><span><span class="k-'+esc(e.kind)+'">'+kindLabel(e)+'</span> · <b>'+esc(e.name||itemInfo(e.item).name)+'</b> · '+esc(locName(e.from))+' → '+esc(locName(e.to))+(e.note?' <span class="mini">· '+esc(e.note)+'</span>':'')+(e.src&&e.src!=='page'?' <span class="badge muted">'+esc(e.src)+'</span>':'')+'</span><span class="lq">'+fmt(e.qty)+'</span></div>'; }
 function renderLocLog(body){ const evs=eventsFor(curLoc,null,null).slice().reverse().slice(0,300); body.innerHTML='<div class="card">'+(evs.length?evs.map(logRowHTML).join(''):'<p class="mini">No movements yet.</p>')+'</div>'; }
 
@@ -814,7 +898,7 @@ function renderDisc(){
 /* ============================================================
    HISTORY
    ============================================================ */
-function renderHistory(){ const q=norm($('#hsQ').value), kind=$('#hsKind').value; let list=LEDGER.slice().reverse(); if(kind) list=list.filter(e=>e.kind===kind); if(q) list=list.filter(e=>[e.name,locName(e.from),locName(e.to),e.by,e.note].some(x=>norm(x).includes(q))); $('#hsInfo').textContent=list.length+' movement(s)'; $('#hsBody').innerHTML=list.length?list.slice(0,400).map(logRowHTML).join(''):'<p class="mini">Nothing yet.</p>'; $('#hsBody')._rows=list; }
+function renderHistory(){ const q=norm($('#hsQ').value), kind=$('#hsKind').value; let list=LEDGER.slice().reverse(); if(kind) list=list.filter(e=>kind.startsWith('ch:')?e.ch===kind.slice(3):e.kind===kind); if(q) list=list.filter(e=>[e.name,locName(e.from),locName(e.to),e.by,e.note].some(x=>norm(x).includes(q))); $('#hsInfo').textContent=list.length+' movement(s)'; $('#hsBody').innerHTML=list.length?list.slice(0,400).map(logRowHTML).join(''):'<p class="mini">Nothing yet.</p>'; $('#hsBody')._rows=list; }
 
 /* ============================================================
    CAMERA
