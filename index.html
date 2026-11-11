@@ -238,7 +238,7 @@ td.editable{cursor:pointer} td.editable:hover{background:#1a2338;box-shadow:inse
      packstation/transfers           → ready transfers become ledger events
    Day boundaries: calendar days (local time). Streamer rooms: day = day shift + night shift (build 3).
    ============================================================ */
-const BUILD='2026-11-11c · sign-in';
+const BUILD='2026-11-11e';
 const INV_CONFIG={apiKey:"AIzaSyAsTYwU0qABmXKuYSpyendwHw3djJc-Bqo",authDomain:"calipoke-inventory.firebaseapp.com",databaseURL:"https://calipoke-inventory-default-rtdb.firebaseio.com",projectId:"calipoke-inventory",storageBucket:"calipoke-inventory.firebasestorage.app",messagingSenderId:"156640764541",appId:"1:156640764541:web:833f96e4b0849b53454714"};
 const STATION_CONFIG={apiKey:"AIzaSyB2I2sR9czF6F29OZMyEZubmwQGP7nWFlc",authDomain:"calipoke-packstation.firebaseapp.com",databaseURL:"https://calipoke-packstation-default-rtdb.firebaseio.com",projectId:"calipoke-packstation",storageBucket:"calipoke-packstation.firebasestorage.app",messagingSenderId:"125288117157",appId:"1:125288117157:web:461b4d553e100c07b9ae4c"};
 const ROOT='inv', STATION_PATH='packstation';
@@ -317,6 +317,10 @@ document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ $('#lightbox').cl
 function applyLogo(){ [['logoHeader','dotHeader'],['logoGate','dotGate'],['logoMenu','dotMenu']].forEach(([a,b])=>{ const i=$('#'+a),d=$('#'+b); if(!i||!LOGO_URL) return; i.src=LOGO_URL; i.classList.remove('hide'); d.classList.add('hide'); i.onerror=()=>{ i.classList.add('hide'); d.classList.remove('hide'); }; }); }
 function show(s){ screen=s; ['menu','loc','overview','disc','history','game','import'].forEach(x=>$('#screen-'+x).classList.toggle('hide',x!==s)); closeModal(); window.scrollTo({top:0}); }
 const isAdmin=()=>MY_ROLE==='admin';
+const isStreamer=()=>!!(window.CPAuth&&CPAuth.user&&CPAuth.user.role==='streamer');
+const canPlanGame=()=>!isStreamer();
+const shiftOpenIn=loc=>{ const sh=openShiftAt(loc); return !!(sh&&sh.status==='open'); };
+let showPastGames=false;
 const canLoc=id=>!window.CPAuth||CPAuth.can(id,'inventory');
 function alog(action,d){ try{ if(window.CPAuth) CPAuth.log(action,d); }catch(e){} }
 
@@ -564,7 +568,7 @@ function freeOf(s,k){ return (+((s.items||{})[k])||0)-(bundleReserved(s)[k]||0);
 const gameStatus=s=>s.status==='open'?'planning':(s.status||'planning');
 const readyInStockroom=k=>balAt('stockroom',k)-(reservedAt('stockroom')[k]||0);
 function whereIs(k,exclLoc){ const w=[]; LOCS.forEach(l=>{ if(l.id===exclLoc) return; const b=balAt(l.id,k); if(b) w.push(locName(l.id)+' '+fmt(b)); }); Object.keys(SUBS).forEach(id=>{ const s=SUBS[id]; if(s.status!=='closed'&&s.items&&+s.items[fbKey(k)]) w.push('🧺 '+s.name+' '+fmt(+s.items[fbKey(k)])); }); return w; }
-function openPlanGame(){
+function openPlanGame(){ if(!canPlanGame()){ toast('Games are planned in the Stockroom — ask the Stockroom team','warn'); return; }
   const d=modal('<h2>🎲 Plan a game</h2><p class="sub" style="font-size:13px">The game is built in the <b>Stockroom</b> — only products that are ready there can go in. When the list is done, mark it ready and move it whole to the streamer\'s room.</p>'+
     '<div class="fld"><label>Game name</label><input id="pgName" class="tinput" style="font-family:var(--body)" placeholder="e.g. Koi Bag Game 11/12 · TT1"></div>'+
     '<div class="row" style="margin-top:16px"><button class="btn primary lg" id="pgGo" style="flex:1">Create & build the list</button><button class="btn ghost" id="pgX">Cancel</button></div>');
@@ -574,24 +578,24 @@ function openPlanGame(){
 }
 function openGame(id,back){ curGame=id; gmBackTo=back&&back!=='game'?back:'menu'; gmQ=''; gmTab='sell'; show('game'); renderGame(); }
 async function setGameStatus(id,status,extra){ await R.child('subs/'+id).update(Object.assign({status},extra||{})); await R.child('subs/'+id+'/log').push({at:Date.now(),by:MY_NAME,text:'status → '+status}); }
-async function startGame(id){ const s=SUBS[id]; if(!s) return; const items=s.items||{}; if(!unitsOf(items)){ toast('The game is empty','warn'); return; }
+async function startGame(id){ const s=SUBS[id]; if(!s) return; if(!shiftOpenIn(s.at)){ toast('A game can only be started during a stream — start the shift first','warn',4000); return; } const items=s.items||{}; if(!unitsOf(items)){ toast('The game is empty','warn'); return; }
   if(gameStatus(s)==='ended'){ if(!confirm('Continue "'+s.name+'"? Sales keep adding to the same game.')) return; await setGameStatus(id,'live'); openGame(id,'loc'); return; }
   if(!confirm('Start "'+s.name+'" in '+locName(s.at)+'?\nThe current list becomes the starting stock of the game.')) return;
   const start={}; for(const k in items) if(+items[k]) start[k]=+items[k];
   await setGameStatus(id,'live',{start,sold:{},startedAt:Date.now(),startedBy:MY_NAME,room:s.at}); alog('game_start',{text:s.name,loc:s.at,ref:id}); beep('ok'); toast('Game started — sell by scan or name','ok'); openGame(id,'loc'); }
 function renderGame(){
   const s=SUBS[curGame]; if(!s){ goMenu(); return; } const st=gameStatus(s); const sid='sub:'+curGame;
-  const items=s.items||{}, start=s.start||{}, sold=s.sold||{}, bundles=s.bundles||{}; const edit=st==='planning'||(st==='ready'&&s.editing); const live=st==='live';
+  const items=s.items||{}, start=s.start||{}, sold=s.sold||{}, bundles=s.bundles||{}; const edit=(st==='planning'||(st==='ready'&&s.editing))&&!isStreamer(); const live=st==='live'; const strm=isStreamer();
   $('#gmTitle').textContent='🎲 '+s.name; const gs=$('#gmStat'); gs.className='gstat '+st; gs.textContent=st;
   const inStream=(LOC_BY_ID[s.at]||{}).kind==='stream';
   const acts=[];
-  if(st==='planning') acts.push('<button class="btn primary" id="gmReady" '+(unitsOf(items)?'':'disabled')+'>✓ List is ready</button>');
-  if(st==='ready') acts.push(s.editing?'<button class="btn primary" id="gmReady">✓ Done editing</button>':'<button class="btn ghost" id="gmEdit">✎ Edit list</button>');
-  if((st==='ready'||st==='ended'||st==='planning')&&inStream&&unitsOf(items)) acts.push('<button class="btn primary" id="gmStart">▶ '+(st==='ended'?'Continue game':'Start game')+'</button>');
+  if(st==='planning'&&!strm) acts.push('<button class="btn primary" id="gmReady" '+(unitsOf(items)?'':'disabled')+'>✓ List is ready</button>');
+  if(st==='ready'&&!strm) acts.push(s.editing?'<button class="btn primary" id="gmReady">✓ Done editing</button>':'<button class="btn ghost" id="gmEdit">✎ Edit list</button>');
+  if((st==='ready'||st==='ended'||st==='planning')&&inStream&&unitsOf(items)) acts.push(shiftOpenIn(s.at)?'<button class="btn primary" id="gmStart">▶ '+(st==='ended'?'Continue game':'Start game')+'</button>':'<span class="badge warn">start the shift to run this game</span>');
   if(live) acts.push('<button class="btn warn" id="gmEnd">■ End game</button>');
-  if(st!=='closed') acts.push('<select class="sel" id="gmMove" style="min-width:150px"><option value="">Move whole game to…</option>'+LOCS.filter(l=>l.id!==s.at&&l.id!=='warehouse'&&l.kind!=='show').map(l=>'<option value="'+l.id+'">'+l.icon+' '+esc(l.name)+'</option>').join('')+'</select>');
-  if(st!=='closed'&&s.at==='stockroom'&&!live) acts.push('<button class="btn sm warn" id="gmRet">↩ Return all to Stockroom</button>');
-  if(st!=='closed'&&!live&&unitsOf(items)) acts.push('<button class="btn sm" id="gmCount" title="Count what is physically in the game and compare with the system">🔢 Count leftovers</button>');
+  if(st!=='closed'&&!strm) acts.push('<select class="sel" id="gmMove" style="min-width:150px"><option value="">Move whole game to…</option>'+LOCS.filter(l=>l.id!==s.at&&l.id!=='warehouse'&&l.kind!=='show').map(l=>'<option value="'+l.id+'">'+l.icon+' '+esc(l.name)+'</option>').join('')+'</select>');
+  if(st!=='closed'&&s.at==='stockroom'&&!live&&!strm) acts.push('<button class="btn sm warn" id="gmRet">↩ Return all to Stockroom</button>');
+  if(st!=='closed'&&!live&&unitsOf(items)&&!strm) acts.push('<button class="btn sm" id="gmCount" title="Count what is physically in the game and compare with the system">🔢 Count leftovers</button>');
   if(isAdmin()&&st!=='closed') acts.push('<button class="btn sm ghost" id="gmAdmAdd" title="Admin: put any product into the game as a correction">✎ Add (admin)</button>');
   acts.push('<button class="btn ghost sm" id="gmHist">🕘</button>');
   const roomShift=inStream?openShiftAt(s.at):null; if(roomShift&&roomShift.status==='open') acts.push('<button class="btn danger" id="gmEndShift" title="End '+shiftLabel(roomShift)+' in '+esc(locName(s.at))+'">■ End shift</button>');
@@ -864,7 +868,7 @@ function openTransferRequest(loc){ const cart=[]; let to=TR_NAME[loc]||'Stockroo
     setTimeout(()=>sc.focus(),60); };
   draw(); }
 function gamesAt(loc){ return Object.keys(SUBS).filter(id=>SUBS[id].kind==='game'&&SUBS[id].at===loc&&SUBS[id].status!=='closed').map(id=>Object.assign({id},SUBS[id])).sort((a,b)=>(gameStatus(a)==='live'?0:1)-(gameStatus(b)==='live'?0:1)||(b.createdAt||0)-(a.createdAt||0)); }
-function openGamePicker(loc){ const list=gamesAt(loc);
+function openGamePicker(loc){ const list=gamesAt(loc).filter(g=>!isStreamer()||gameStatus(g)!=='ended');
   const d=modal('<h2>🎲 Games in '+esc(locName(loc))+'</h2><p class="sub" style="font-size:13px">Only games that are physically in this room are shown. Pick one, press Start game, sell from it, then End game — leftovers stay in the game.</p>'+(list.length?'<div class="mlist">'+list.map(g=>{ const st=gameStatus(g); const u=unitsOf(g.items||{}); return '<button class="mpick" data-g="'+g.id+'"><div style="width:44px;height:44px;border-radius:8px;background:#231a3a;display:grid;place-items:center;font-size:22px">🎲</div><div><div class="pn">'+esc(g.name)+' <span class="gstat '+st+'">'+st+'</span></div><div class="pv">'+fmt(u)+' units'+(g.start&&unitsOf(g.start)?' · sold '+fmt(unitsOf(g.sold||{})):'')+' · '+Object.keys(g.bundles||{}).length+' bundle(s)</div></div><span class="pt here">'+(st==='live'?'💲 Sell':st==='ready'||st==='ended'?'▶ Start':'open')+'</span></button>'; }).join('')+'</div>':'<div class="empty">No game in this room yet. Games are planned in the Stockroom and moved here whole — ask the Stockroom, or plan one from the Sub-locations tab.</div>')+'<button class="btn ghost" id="gpX" style="width:100%;margin-top:12px">Close</button>');
   d.querySelector('#gpX').onclick=closeModal; d.querySelectorAll('[data-g]').forEach(b=>b.onclick=()=>{ closeModal(); openGame(b.dataset.g,'loc'); }); }
 function wireShiftBar(loc){ const h=$('#lcBody'); const q=s=>h.querySelector(s); const gb=q('[data-shgame]'); if(gb) gb.onclick=()=>openGamePicker(loc); const tb=q('[data-shtr]'); if(tb) tb.onclick=()=>openTransferRequest(loc); const a=q('[data-shstart]'); if(a) a.onclick=()=>startShift(loc); const c=q('[data-shcount]'); if(c) c.onclick=()=>shiftOpeningCount(c.dataset.shcount); const x=q('[data-shcancel]'); if(x) x.onclick=()=>cancelShift(x.dataset.shcancel); const c2=q('[data-shclose2]'); if(c2) c2.onclick=()=>shiftClosingCount(c2.dataset.shclose2);
@@ -920,7 +924,8 @@ let expandedSub=null;
 function renderLoc(){
   const l=LOC_BY_ID[curLoc]; if(!l){ show('menu'); return; }
   $('#lcTitle').textContent=l.icon+' '+l.name; const tot=totalsAt(curLoc); $('#lcItems').textContent=Object.keys(tot).filter(k=>tot[k]).length; $('#lcUnits').textContent=fmt(unitsOf(tot));
-  $('#lcCount').classList.toggle('hide',curLoc==='warehouse'); $('#lcReq').classList.toggle('hide',curLoc==='warehouse'); $('#lcReq').onclick=()=>openTransferRequest(curLoc); $('#lcNewSub').classList.toggle('hide',curLoc==='warehouse'); $('#lcGame').classList.toggle('hide',l.kind==='warehouse'||l.kind==='show');
+  $('#lcCount').classList.toggle('hide',curLoc==='warehouse'); $('#lcReq').classList.toggle('hide',curLoc==='warehouse'); $('#lcReq').onclick=()=>openTransferRequest(curLoc); $('#lcNewSub').classList.toggle('hide',curLoc==='warehouse'); $('#lcGame').classList.toggle('hide',l.kind==='warehouse'||l.kind==='show'||!canPlanGame()); if(isStreamer()){ $('#lcCount').classList.add('hide'); $('#lcNewSub').classList.add('hide'); }
+  const strm=isStreamer(); ['days','log'].forEach(t=>$('#lcTabs [data-t="'+t+'"]').classList.toggle('hide',strm)); if(strm&&(lcTab==='days'||lcTab==='log')) lcTab=l.kind==='stream'?'shift':'stock';
   $('#lcTabs [data-t="shift"]').classList.toggle('hide',l.kind!=='stream'); if(lcTab==='shift'&&l.kind!=='stream') lcTab='stock';
   $('#lcTabs [data-t="subs"]').textContent=l.kind==='stream'?'🎲 Games':l.kind==='show'?'🚐 Shows':'🧺 Sub-locations';
   $$('#lcTabs button').forEach(b=>b.classList.toggle('on',b.dataset.t===lcTab));
@@ -947,11 +952,11 @@ function renderStock(body){
 function elsewhereHTML(q){ const rows=searchProducts(q,8); const parts=[]; rows.forEach(v=>{ const where=[]; LOCS.forEach(l=>{ const b=balAt(l.id,v.ikey); if(b) where.push(locName(l.id)+' '+fmt(b)); }); subsAt(null); Object.keys(SUBS).forEach(id=>{ const s=SUBS[id]; if(s.status!=='closed'&&s.items&&+s.items[v.ikey]) where.push('🧺 '+s.name+' '+fmt(+s.items[v.ikey])); }); if(where.length) parts.push('<b>'+nm(v)+(varOf(v.variation)?' · '+esc(v.variation):'')+'</b>: '+esc(where.join(' · '))); }); return parts.length?'Also in: '+parts.join('<br>')+(curLoc==='stockroom'?'<br><span style="color:var(--warn)">Not here — request a transfer first.</span>':''):'Not in any location.'; }
 /* everything can be opened except products whose name ends with "Pack"; the pack product is set when a box is opened the first time */
 const isBoxLike=k=>{ const it=itemInfo(k); if(BOXES[fbKey(k)]) return true; if(it.tmp) return false; return !/\bpacks?\s*$/i.test(String(it.name).trim()); };
-function rowHTML(k,qty,reserved,loc){ const it=itemInfo(k); const at=loc||curLoc; const ro=at==='warehouse'; const ready=qty-(reserved||0); const canOpen=!ro&&isBoxLike(k)&&(isSub(at)||['stockroom','tiktok1','ebay','whatnot'].includes(at));
+function rowHTML(k,qty,reserved,loc){ const it=itemInfo(k); const at=loc||curLoc; const ro=at==='warehouse'||isStreamer(); const ready=qty-(reserved||0); const canOpen=!ro&&isBoxLike(k)&&(isSub(at)||['stockroom','tiktok1','ebay','whatnot'].includes(at));
   return '<div class="irow" data-k="'+esc(k)+'" data-loc="'+esc(at)+'">'+img(it.image)+'<div><div class="nm">'+nm(it)+'</div><div class="vr">'+esc(varOf(it.variation))+(it.barcode?' · <span class="mono">'+esc(barcodesOf(it.barcode)[0]||'')+'</span>':'')+(reserved?' · <span style="color:var(--warn)">reserved '+fmt(reserved)+' · ready '+fmt(ready)+'</span>':'')+'</div></div>'+
     '<div class="q'+(qty<0?' neg':(reserved?' res':''))+'">'+fmt(qty)+'<small>units</small></div><div class="acts">'+(ro?'':'<span class="grip" title="Drag to another location">⠿</span>'+(canOpen?(qty>0?'<button class="btn sm warn" data-open="'+esc(k)+'" title="Open box → packs">📦 Open</button>':'<button class="btn sm ghost" disabled title="Nothing to open: the stock here is '+fmt(qty)+'. Enter the real quantity first (Count or ✎).">📦 Open</button>'):'')+'<button class="btn sm" data-tr="'+esc(k)+'">⇄</button>'+(isAdmin()?'<button class="btn sm ghost" data-adj="'+esc(k)+'" title="Correct">✎</button>':''))+'</div></div>'; }
 function wireRows(sel,loc){ $$(sel+' [data-open]').forEach(b=>b.onclick=()=>openBoxAt(loc,b.dataset.open)); $$(sel+' [data-tr]').forEach(b=>b.onclick=()=>openTransfer(b.dataset.tr,loc)); $$(sel+' [data-adj]').forEach(b=>b.onclick=()=>openAdjust(b.dataset.adj,loc)); }
-function renderSubs(body){
+function renderSubs(body){ if(isStreamer()){ renderStreamerGames(body); return; }
   const subs=subsAt(curLoc); const closed=Object.keys(SUBS).filter(id=>SUBS[id].status==='closed'&&(SUBS[id].returnedTo===curLoc||SUBS[id].at===curLoc)).map(id=>Object.assign({id},SUBS[id])).sort((a,b)=>(b.closedAt||0)-(a.closedAt||0)).slice(0,20);
   const open=subs.find(s=>s.id===expandedSub);
   body.innerHTML=(subs.length?'<p class="mini" style="margin:0 0 8px">Tap a tile to see what is inside. Drag a tile onto a location above to move the whole sub-location.</p><div class="stiles">'+subs.map(s=>stileHTML(s)).join('')+'</div>':'<div class="empty">No sub-locations here. Create one for a game or a show, then move products into it (drag a product onto its chip above).</div>')+(open?subHTML(open):'')+
@@ -964,6 +969,21 @@ function renderSubs(body){
   $$('#lcBody [data-gopen]').forEach(b=>b.onclick=()=>openGame(b.dataset.gopen,'loc'));
   $$('#lcBody [data-gstart]').forEach(b=>b.onclick=()=>startGame(b.dataset.gstart));
 }
+/* streamer view of the Games tab: current + planned games of the room, read-only; past games on demand */
+function renderStreamerGames(body){ const loc=curLoc; const shOpen=shiftOpenIn(loc);
+  const cur=gamesAt(loc).filter(g=>gameStatus(g)!=='ended');
+  const past=Object.keys(SUBS).filter(id=>{ const g=SUBS[id]; return g.kind==='game'&&((g.at===loc&&gameStatus(g)==='ended')||(g.status==='closed'&&(g.room===loc||g.at===loc))); }).map(id=>Object.assign({id},SUBS[id])).sort((a,b)=>(b.endedAt||b.closedAt||0)-(a.endedAt||a.closedAt||0)).slice(0,30);
+  const card=(g,isPast)=>{ const st=gameStatus(g); const items=g.items||{}; const on=expandedSub===g.id; const sold=unitsOf(g.sold||{}), start=unitsOf(g.start||{});
+    const keys=Object.keys(items).filter(k=>+items[k]).sort((a,b)=>itemInfo(a).name.localeCompare(itemInfo(b).name));
+    return '<div class="subcard"'+(isPast?' style="opacity:.75"':'')+'><div class="sh" data-gexp="'+g.id+'" style="cursor:pointer"><span class="sn">🎲 '+esc(g.name)+'</span><span class="gstat '+st+'">'+st+'</span><span class="pill">'+(start?'start <b>'+fmt(start)+'</b> · sold <b>'+fmt(sold)+'</b> · left <b>':'units <b>')+fmt(unitsOf(items))+'</b></span><span class="pill">'+Object.keys(g.bundles||{}).length+' bundle(s)</span><div class="spacer"></div>'+(isPast?'<button class="btn sm ghost" data-subhist="'+g.id+'">🕘 History</button>':'')+'<span class="mini">'+(on?'▾':'▸')+'</span></div>'+
+      (on?'<div class="list" style="margin-top:8px">'+(keys.length?keys.map(k=>rowHTML(k,items[k],0,'sub:'+g.id)).join(''):'<div class="empty" style="padding:14px">Empty.</div>')+'</div>':'')+'</div>'; };
+  body.innerHTML=(shOpen?'<div class="note info" style="margin:0 0 12px">To start or sell a game, use <b>🎲 Game</b> on the <b>Shift</b> tab.</div>':'<div class="note" style="margin:0 0 12px">A game can only be started during a stream — start the shift on the <b>Shift</b> tab first. Here you can look at what is planned for this room.</div>')+
+    (cur.length?cur.map(g=>card(g,false)).join(''):'<div class="empty">No current or planned games in '+esc(locName(loc))+'. Games are planned in the Stockroom and moved here whole.</div>')+
+    '<div style="margin-top:20px;text-align:center"><button class="btn ghost" id="sgPast">'+(showPastGames?'▴ Hide past games':'🕘 Show past games ('+past.length+')')+'</button></div>'+
+    (showPastGames?(past.length?'<h2 style="margin-top:14px">Past games</h2>'+past.map(g=>card(g,true)).join(''):'<p class="mini" style="text-align:center">No past games here.</p>'):'');
+  body.querySelectorAll('[data-gexp]').forEach(h=>h.onclick=e=>{ if(e.target.closest('button')) return; expandedSub=expandedSub===h.dataset.gexp?null:h.dataset.gexp; renderStreamerGames(body); });
+  body.querySelectorAll('[data-subhist]').forEach(b=>b.onclick=()=>openSubHistory(b.dataset.subhist));
+  body.querySelector('#sgPast').onclick=()=>{ showPastGames=!showPastGames; renderStreamerGames(body); }; }
 function stileHTML(s){ const items=s.items||{}; const u=unitsOf(items); const g=s.kind==='game'; const st=gameStatus(s); const n=Object.keys(items).filter(k=>+items[k]).length; const on=expandedSub===s.id;
   return '<div class="stile'+(on?' on':'')+'" data-stile="'+s.id+'" data-subdrag="'+s.id+'"><div class="st-ic">'+(g?'🎲':s.kind==='show'?'🚐':'🧺')+'</div><div><div class="st-n">'+esc(s.name)+'</div><div class="st-m">'+(g?'<span class="gstat '+st+'">'+st+'</span> ':'<span class="badge sub">'+esc(s.kind)+'</span> ')+n+' items · <b>'+fmt(u)+'</b> units'+(s.start&&unitsOf(s.start)?' · sold '+fmt(unitsOf(s.sold||{})):'')+'</div></div><div class="st-go">'+(on?'▾':'▸')+'</div></div>'; }
 function subHTML(s){ const items=s.items||{}; const u=unitsOf(items); const sold=unitsOf(s.sold||{}), start=unitsOf(s.start||{}); const g=s.kind==='game'; const st=gameStatus(s);
@@ -996,7 +1016,7 @@ function renderLocLog(body){ const evs=eventsFor(curLoc,null,null).slice().rever
 
 /* ---------- drag & drop: product row → location chip / sub chip ---------- */
 let dnd=null;
-document.addEventListener('pointerdown',e=>{ if(e.button!==0||screen!=='loc') return; const st=e.target.closest('[data-subdrag]'); if(st&&!e.target.closest('button,select')){ e.preventDefault(); dnd={sub:st.dataset.subdrag,from:'sub:'+st.dataset.subdrag,x0:e.clientX,y0:e.clientY,on:false,ghost:null,target:null}; return; } const row=e.target.closest('.irow'); if(!row||row.dataset.loc==='warehouse') return; if(e.target.closest('button,input,img')) return; if(e.pointerType==='touch'&&!e.target.closest('.grip')) return; e.preventDefault(); dnd={k:row.dataset.k,from:row.dataset.loc,x0:e.clientX,y0:e.clientY,on:false,ghost:null,target:null}; });
+document.addEventListener('pointerdown',e=>{ if(e.button!==0||screen!=='loc'||isStreamer()) return; const st=e.target.closest('[data-subdrag]'); if(st&&!e.target.closest('button,select')){ e.preventDefault(); dnd={sub:st.dataset.subdrag,from:'sub:'+st.dataset.subdrag,x0:e.clientX,y0:e.clientY,on:false,ghost:null,target:null}; return; } const row=e.target.closest('.irow'); if(!row||row.dataset.loc==='warehouse') return; if(e.target.closest('button,input,img')) return; if(e.pointerType==='touch'&&!e.target.closest('.grip')) return; e.preventDefault(); dnd={k:row.dataset.k,from:row.dataset.loc,x0:e.clientX,y0:e.clientY,on:false,ghost:null,target:null}; });
 document.addEventListener('pointermove',e=>{ if(!dnd) return; if(!dnd.on){ if(Math.hypot(e.clientX-dnd.x0,e.clientY-dnd.y0)<6) return; dnd.on=true; dnd.ghost=document.createElement('div'); dnd.ghost.className='dragghost none'; dnd.ghost.textContent=dnd.sub?'🧺 '+SUBS[dnd.sub].name:itemInfo(dnd.k).name; document.body.appendChild(dnd.ghost); document.body.classList.add('dragging'); }
   dnd.ghost.style.left=e.clientX+'px'; dnd.ghost.style.top=e.clientY+'px'; $$('.dropon').forEach(x=>x.classList.remove('dropon')); const t=document.elementFromPoint(e.clientX,e.clientY); const c=t&&t.closest('[data-drop]'); dnd.target=null; if(c&&c.dataset.drop!==dnd.from&&!(dnd.sub&&isSub(c.dataset.drop))){ c.classList.add('dropon'); dnd.target=c.dataset.drop; dnd.ghost.className='dragghost'; dnd.ghost.textContent=(dnd.sub?'🧺 '+SUBS[dnd.sub].name:itemInfo(dnd.k).name)+' → '+locName(c.dataset.drop); } else dnd.ghost.className='dragghost none'; });
 document.addEventListener('pointerup',()=>{ if(!dnd) return; const d=dnd; dnd=null; $$('.dropon').forEach(x=>x.classList.remove('dropon')); document.body.classList.remove('dragging'); if(d.ghost) d.ghost.remove(); if(d.on&&d.target){ if(d.sub){ if(confirm('Move "'+SUBS[d.sub].name+'" whole to '+locName(d.target)+'?')) moveSub(d.sub,d.target); } else openTransfer(d.k,d.from,d.target); } });
@@ -1086,18 +1106,18 @@ $('#camClose').onclick=closeCam;
 /* ============================================================
    ROUTER + WIRING
    ============================================================ */
-function renderCurrent(){ if(!MY_NAME) return; if(screen==='menu') renderMenu(); else if(screen==='loc') renderLoc(); else if(screen==='overview') renderOverview(); else if(screen==='disc') renderDisc(); else if(screen==='history') renderHistory(); else if(screen==='game') renderGame(); else if(screen==='import') renderImport(); }
+function renderCurrent(){ if(!MY_NAME) return; if((screen==='disc'||screen==='history'||screen==='import')&&!isAdmin()){ goMenu(); return; } if(screen==='menu') renderMenu(); else if(screen==='loc') renderLoc(); else if(screen==='overview') renderOverview(); else if(screen==='disc') renderDisc(); else if(screen==='history') renderHistory(); else if(screen==='game') renderGame(); else if(screen==='import') renderImport(); }
 function goMenu(){ show('menu'); renderMenu(); }
 /* links from other apps: #loc/<id>/<tab> · #game/<subId> */
 function applyHash(){ if(!MY_NAME) return; const m=/^#loc\/([a-z0-9]+)(?:\/(stock|subs|days|log))?$/.exec(location.hash||''); if(m&&LOC_BY_ID[m[1]]){ openLoc(m[1]); if(m[2]){ lcTab=m[2]; renderLoc(); } return; } const g=/^#game\/(.+)$/.exec(location.hash||''); if(g&&SUBS[decodeURIComponent(g[1])]) openGame(decodeURIComponent(g[1]),'menu'); }
 window.addEventListener('hashchange',applyHash);
 $('#homeBtn').onclick=goMenu; $('#lcBack').onclick=goMenu; $('#ovBack').onclick=goMenu; $('#dcBack').onclick=goMenu; $('#hsBack').onclick=goMenu;
 
-$('#mOverview').onclick=()=>{ show('overview'); renderOverview(); }; $('#mDisc').onclick=()=>{ show('disc'); renderDisc(); }; $('#mHistory').onclick=()=>{ show('history'); renderHistory(); };
+$('#mOverview').onclick=()=>{ show('overview'); renderOverview(); }; $('#mDisc').onclick=()=>{ if(!isAdmin()) return; show('disc'); renderDisc(); }; $('#mHistory').onclick=()=>{ if(!isAdmin()) return; show('history'); renderHistory(); };
 $('#mImport').onclick=()=>{ if(!isAdmin()) return; show('import'); $('#imDay').value=$('#imDay').value||dayOf(Date.now()); renderImport(); }; $('#imBack').onclick=goMenu; buildImportFields(); $('#imDay').addEventListener('change',renderImport); $('#imCsv').onclick=exportStockCsv;
 $('#mGame').onclick=openPlanGame; $('#lcGame').onclick=openPlanGame; $('#mBoxes').onclick=openBoxSettings;
 $('#gmBack').onclick=()=>{ if(gmBackTo==='loc'&&curLoc){ show('loc'); lcTab='subs'; renderLoc(); } else goMenu(); };
-$('#mReload').onclick=()=>loadInventory(true);
+$('#mReload').onclick=()=>{ if(isAdmin()) loadInventory(true); };
 $$('#lcTabs button').forEach(b=>b.onclick=()=>{ lcTab=b.dataset.t; renderLoc(); });
 $('#lcCount').onclick=()=>openCount(curLoc); $('#lcNewSub').onclick=()=>openNewSub(curLoc);
 $('#ovDate').addEventListener('change',e=>{ ovDay=e.target.value||dayOf(Date.now()); renderOverview(); }); $('#ovToday').onclick=()=>{ ovDay=dayOf(Date.now()); renderOverview(); }; $('#ovQ').addEventListener('input',renderOverview); $('#ovZero').addEventListener('change',renderOverview); $('#ovSort').addEventListener('change',renderOverview); [['ovType','type'],['ovBrand','brand'],['ovSeries','series']].forEach(([id,f])=>$('#'+id).addEventListener('change',e=>{ ovF[f]=e.target.value; renderOverview(); })); $('#ovClear').onclick=()=>{ ovF.type=ovF.brand=ovF.series=''; $('#ovQ').value=''; $('#ovSort').value='name'; renderOverview(); };
@@ -1111,7 +1131,7 @@ $('#hsCsv').onclick=()=>{ const l=$('#hsBody')._rows||[]; csv([['Time','Kind','I
 /* ---- sign-in through CALIPOKE ADMIN ---- */
 (function boot(){ applyLogo(); $('#buildTag').textContent='v'+BUILD;
   CPAuth.init({app:'inventory',header:'#hdrUser',onReady:u=>{ MY_NAME=u.name; MY_ROLE=u.role==='admin'?'admin':'staff';
-    $('#meName').textContent=u.name+' · '+u.roleLabel; $('#mBoxes').classList.toggle('hide',u.role!=='admin'); $('#mImport').classList.toggle('hide',u.role!=='admin');
+    $('#meName').textContent=u.name+' · '+u.roleLabel; ['mBoxes','mImport','mDisc','mHistory','mReload'].forEach(id=>$('#'+id).classList.toggle('hide',u.role!=='admin')); $('#mGame').classList.toggle('hide',u.role==='streamer');
     $('#appHeader').classList.remove('hide'); $('#appMain').classList.remove('hide'); goMenu(); connect(); setTimeout(applyHash,400); }}); })();
 </script>
 </body>
