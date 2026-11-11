@@ -9,6 +9,8 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-auth-compat.js"></script>
+<script src="https://r-alib.github.io/calipoke-admin/calipoke-auth.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
 <style>
@@ -137,17 +139,6 @@ td.editable{cursor:pointer} td.editable:hover{background:#1a2338;box-shadow:inse
 </head>
 <body>
 
-<div class="namegate" id="namegate">
-  <div class="box">
-    <div class="gatebrand"><img class="brandlogo xl hide" id="logoGate" alt=""><span class="dot big" id="dotGate"></span>
-      <div class="gatetitle">CPH INVENTORY</div><div class="gatesub" id="gateSub">Calipokehouse · stock by location</div></div>
-    <h1>Enter your name</h1>
-    <p class="sub" id="gateHint">Your name goes on every movement you make.</p>
-    <input id="nameInput" class="tinput" autocomplete="off" placeholder="e.g. Joe" maxlength="24">
-    <input id="pinInput" class="tinput hide" type="password" inputmode="numeric" autocomplete="off" placeholder="PIN">
-    <button class="btn primary lg" id="enterBtn" style="width:100%">Continue</button>
-  </div>
-</div>
 
 <header class="hide" id="appHeader">
   <div class="brand"><img class="brandlogo hide" id="logoHeader" alt=""><span class="dot" id="dotHeader"></span><div>CPH INVENTORY<small id="meName">—</small></div></div>
@@ -156,7 +147,7 @@ td.editable{cursor:pointer} td.editable:hover{background:#1a2338;box-shadow:inse
   <span class="pill" title="Products in the catalog">📦 <b id="catCount">0</b></span>
   <span class="pill" id="buildTag" style="font-size:11px;color:var(--faint)">v—</span>
   <button class="iconbtn" id="homeBtn" title="Locations">▤</button>
-  <button class="iconbtn" id="logoutBtn" title="Change user">⇆</button>
+  <div id="hdrUser"></div>
 </header>
 
 <main class="hide" id="appMain">
@@ -247,7 +238,7 @@ td.editable{cursor:pointer} td.editable:hover{background:#1a2338;box-shadow:inse
      packstation/transfers           → ready transfers become ledger events
    Day boundaries: calendar days (local time). Streamer rooms: day = day shift + night shift (build 3).
    ============================================================ */
-const BUILD='2026-11-11b';
+const BUILD='2026-11-11c · sign-in';
 const INV_CONFIG={apiKey:"AIzaSyAsTYwU0qABmXKuYSpyendwHw3djJc-Bqo",authDomain:"calipoke-inventory.firebaseapp.com",databaseURL:"https://calipoke-inventory-default-rtdb.firebaseio.com",projectId:"calipoke-inventory",storageBucket:"calipoke-inventory.firebasestorage.app",messagingSenderId:"156640764541",appId:"1:156640764541:web:833f96e4b0849b53454714"};
 const STATION_CONFIG={apiKey:"AIzaSyB2I2sR9czF6F29OZMyEZubmwQGP7nWFlc",authDomain:"calipoke-packstation.firebaseapp.com",databaseURL:"https://calipoke-packstation-default-rtdb.firebaseio.com",projectId:"calipoke-packstation",storageBucket:"calipoke-packstation.firebasestorage.app",messagingSenderId:"125288117157",appId:"1:125288117157:web:461b4d553e100c07b9ae4c"};
 const ROOT='inv', STATION_PATH='packstation';
@@ -259,7 +250,7 @@ const TR_LOCATIONS=['Warehouse','Stockroom','Tiktok 1','Ebay','What Not','Single
 const TR_NAME={stockroom:'Stockroom',tiktok1:'Tiktok 1',ebay:'Ebay',whatnot:'What Not',singleslab:'Single & Slab',cardshow:'Card Show'};
 const LOGO_URL='https://i.postimg.cc/VkfXDqWf/images.jpg';
 const INV_CACHE_MS=20*60*1000;
-const ELEVATED=['admin','celina'], ELEVATED_PIN='0515';
+/* sign-in, roles and the activity history come from calipoke-auth.js (CALIPOKE ADMIN) */
 /* locations — order = tile order */
 const LOCS=[
   {id:'warehouse',  name:'Warehouse',       icon:'🏭', kind:'warehouse', desc:'Arcadia warehouse · read from the inventory count'},
@@ -326,6 +317,8 @@ document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ $('#lightbox').cl
 function applyLogo(){ [['logoHeader','dotHeader'],['logoGate','dotGate'],['logoMenu','dotMenu']].forEach(([a,b])=>{ const i=$('#'+a),d=$('#'+b); if(!i||!LOGO_URL) return; i.src=LOGO_URL; i.classList.remove('hide'); d.classList.add('hide'); i.onerror=()=>{ i.classList.add('hide'); d.classList.remove('hide'); }; }); }
 function show(s){ screen=s; ['menu','loc','overview','disc','history','game','import'].forEach(x=>$('#screen-'+x).classList.toggle('hide',x!==s)); closeModal(); window.scrollTo({top:0}); }
 const isAdmin=()=>MY_ROLE==='admin';
+const canLoc=id=>!window.CPAuth||CPAuth.can(id,'inventory');
+function alog(action,d){ try{ if(window.CPAuth) CPAuth.log(action,d); }catch(e){} }
 
 /* ============================================================
    CATALOG (inventory sheet → cached; same reader as the Transfer app)
@@ -360,8 +353,8 @@ function searchProducts(q,limit){ const nq=norm(q), nc=clean(q); if(!nq) return 
    ============================================================ */
 function setDb(on,txt){ DB_ON=on; $('#dbPill').classList.toggle('on',on); $('#dbTxt').textContent=txt; }
 function connect(){
-  const app=firebase.initializeApp(INV_CONFIG); db=firebase.database(app); R=db.ref(ROOT);
-  const sapp=firebase.initializeApp(STATION_CONFIG,'station'); SDB=firebase.database(sapp);
+  const app=(firebase.apps||[]).find(a=>a.options.projectId===INV_CONFIG.projectId)||firebase.initializeApp(INV_CONFIG); db=firebase.database(app); R=db.ref(ROOT);
+  const sapp=(firebase.apps||[]).find(a=>a.options.projectId===STATION_CONFIG.projectId)||firebase.initializeApp(STATION_CONFIG,'station'); SDB=firebase.database(sapp);
   db.ref('.info/connected').on('value',s=>setDb(!!s.val(),s.val()?'live':'reconnecting…'));
   R.child('presence/'+Math.random().toString(36).slice(2,8)).set({name:MY_NAME,at:Date.now()}).catch(()=>{});
   R.child('balances').on('value',s=>{ BAL=s.val()||{}; renderCurrent(); });
@@ -401,6 +394,7 @@ async function postEvent(ev){
   const ts=ev.ts||Date.now(); const key=ev.key||null;
   const rec={ts, day:dayOf(ts), item:ev.item, name:ev.name||itemInfo(ev.item).name, qty:+ev.qty, from:ev.from||null, to:ev.to||null, kind:ev.kind||'transfer', by:ev.by||MY_NAME, note:ev.note||'', src:ev.src||'page', srcId:ev.srcId||null, shift:ev.shift||null, ch:ev.ch||null, at:Date.now()};
   Object.keys(rec).forEach(x=>{ if(rec[x]==null||rec[x]==='') delete rec[x]; });
+  if(ev.src!=='transfer-app') alog({transfer:'transfer',sale:(ev.ch==='bufp'?'auction':ev.ch==='game'?'game_sale':'sale'),adjust:'correction',openbox:'open_box',sub:'sub_move'}[rec.kind]||rec.kind,{text:(rec.from?locName(rec.from):'—')+' → '+(rec.to?locName(rec.to):'—')+(rec.note?' · '+rec.note:''),item:rec.name,qty:rec.qty,loc:rec.to||rec.from,ref:key||null});
   if(key){ const r=await R.child('ledger/'+key).transaction(c=>c?undefined:rec); if(!r.committed) return false; }
   else await R.child('ledger').push(rec);
   if(rec.from) await bump(rec.from,rec.item,-rec.qty);
@@ -553,7 +547,7 @@ function openCount(loc,opts){ opts=opts||{}; let day=opts.day||dayOf(Date.now())
     const finish=async(apply)=>{ const id=R.child('counts/'+loc).push().key; const out={}; keys.forEach(k=>out[fbKey(k)]={exp:lines[k].exp,cnt:lines[k].cnt,item:k,tmp:!!lines[k].tmp}); await R.child('counts/'+loc+'/'+id).set({at:Date.now(),day,by:MY_NAME,lines:out,applied:!!apply,diffs,purpose:opts.purpose||'count',shift:opts.shift||null});
       for(const k of keys){ const l=lines[k]; if(l.cnt===l.exp) continue; if(apply&&!l.tmp){ const diff=l.cnt-l.exp; await postEvent({ts:tsForDay(day),item:k,qty:Math.abs(diff),from:diff<0?loc:null,to:diff>0?loc:null,kind:'adjust',note:'count correction · '+locName(loc)+(day>=dayOf(Date.now())?'':' · as of '+day)}); }
         else await R.child('discrepancies').push({at:Date.now(),loc,item:k,name:itemInfo(k).name,exp:l.exp,cnt:l.cnt,by:MY_NAME,status:'open',countId:id,purpose:opts.purpose||'count',shift:opts.shift||null,tmp:!!l.tmp}); }
-      closeModal(); beep(diffs?'warn':'ok'); toast(apply?'Count applied · '+diffs+' line(s) corrected':(diffs?diffs+' discrepanc'+(diffs===1?'y':'ies')+' recorded for review':'Count confirmed — everything matches'),diffs&&!apply?'warn':'ok',4000); if(opts.onDone) opts.onDone({id,diffs,applied:!!apply,lines:out}); };
+      alog('count',{text:(opts.title||'count')+' · '+keys.length+' lines · '+diffs+' differ'+(apply?' · applied':''),loc:loc,ref:id}); closeModal(); beep(diffs?'warn':'ok'); toast(apply?'Count applied · '+diffs+' line(s) corrected':(diffs?diffs+' discrepanc'+(diffs===1?'y':'ies')+' recorded for review':'Count confirmed — everything matches'),diffs&&!apply?'warn':'ok',4000); if(opts.onDone) opts.onDone({id,diffs,applied:!!apply,lines:out}); };
     d.querySelector('#ctSave').onclick=()=>finish(false); const ap=d.querySelector('#ctApply'); if(ap) ap.onclick=()=>{ if(confirm('Apply '+diffs+' correction(s) to the stock now?'+(keys.some(k=>lines[k].tmp)?'\nTemporary items are not applied — they go to Discrepancies for matching.':''))) finish(true); };
     if(focusTo==='scan'||focusTo===null&&!counted) setTimeout(()=>sc.focus(),60); focusTo='scan';
   };
@@ -584,7 +578,7 @@ async function startGame(id){ const s=SUBS[id]; if(!s) return; const items=s.ite
   if(gameStatus(s)==='ended'){ if(!confirm('Continue "'+s.name+'"? Sales keep adding to the same game.')) return; await setGameStatus(id,'live'); openGame(id,'loc'); return; }
   if(!confirm('Start "'+s.name+'" in '+locName(s.at)+'?\nThe current list becomes the starting stock of the game.')) return;
   const start={}; for(const k in items) if(+items[k]) start[k]=+items[k];
-  await setGameStatus(id,'live',{start,sold:{},startedAt:Date.now(),startedBy:MY_NAME,room:s.at}); beep('ok'); toast('Game started — sell by scan or name','ok'); openGame(id,'loc'); }
+  await setGameStatus(id,'live',{start,sold:{},startedAt:Date.now(),startedBy:MY_NAME,room:s.at}); alog('game_start',{text:s.name,loc:s.at,ref:id}); beep('ok'); toast('Game started — sell by scan or name','ok'); openGame(id,'loc'); }
 function renderGame(){
   const s=SUBS[curGame]; if(!s){ goMenu(); return; } const st=gameStatus(s); const sid='sub:'+curGame;
   const items=s.items||{}, start=s.start||{}, sold=s.sold||{}, bundles=s.bundles||{}; const edit=st==='planning'||(st==='ready'&&s.editing); const live=st==='live';
@@ -623,7 +617,7 @@ function renderGame(){
   const b2=g('#gmEdit'); if(b2) b2.onclick=()=>R.child('subs/'+curGame).update({editing:true});
   const b3=g('#gmStart'); if(b3) b3.onclick=()=>startGame(curGame);
   const es=g('#gmEndShift'); if(es) es.onclick=()=>{ const sh=openShiftAt(s.at); if(!sh) return; if(live){ toast('End the game first, then the shift','warn'); return; } endShift(sh.id); };
-  const b4=g('#gmEnd'); if(b4) b4.onclick=async()=>{ if(!confirm('End "'+s.name+'"? Leftovers stay in the game until it is returned to the Stockroom.')) return; await setGameStatus(curGame,'ended',{endedAt:Date.now(),endedBy:MY_NAME}); toast('Game ended · sold '+fmt(unitsOf(sold))+' of '+fmt(unitsOf(start)),'ok',4000); };
+  const b4=g('#gmEnd'); if(b4) b4.onclick=async()=>{ if(!confirm('End "'+s.name+'"? Leftovers stay in the game until it is returned to the Stockroom.')) return; await setGameStatus(curGame,'ended',{endedAt:Date.now(),endedBy:MY_NAME}); alog('game_end',{text:s.name+' · sold '+fmt(unitsOf(sold))+' of '+fmt(unitsOf(start)),loc:s.at,ref:curGame}); toast('Game ended · sold '+fmt(unitsOf(sold))+' of '+fmt(unitsOf(start)),'ok',4000); };
   const mv=g('#gmMove'); if(mv) mv.onchange=()=>{ if(mv.value) moveSub(curGame,mv.value); };
   const rt=g('#gmRet'); if(rt) rt.onclick=()=>returnSubAll(curGame);
   const gc=g('#gmCount'); if(gc) gc.onclick=()=>openCount('sub:'+curGame,{title:'🔢 Count leftovers · '+s.name,intro:'Scan what is physically left in the game. If the count differs from the system, the difference is recorded — usually a sale that was not scanned.'});
@@ -780,7 +774,7 @@ function startShift(loc){
   let kind=sugg; d.querySelectorAll('#ssKind button').forEach(b=>b.onclick=()=>{ kind=b.dataset.k; d.querySelectorAll('#ssKind button').forEach(x=>x.classList.toggle('on',x===b)); });
   d.querySelector('#ssX').onclick=closeModal;
   d.querySelector('#ssGo').onclick=async()=>{ const day=d.querySelector('#ssDay').value||today; if(shiftsOf(loc,day).some(s=>s.kind===kind&&s.status!=='closed')){ toast('That shift is already open','warn'); return; } const seq=shiftsOf(loc,day).filter(s=>s.kind===kind).length+1;
-    const ref=R.child('shifts').push(); await ref.set({loc,kind,seq,shiftDay:day,status:'open',by:MY_NAME,startedAt:Date.now(),openedAt:Date.now()}); closeModal(); beep('ok'); toast(shiftLabel({kind,seq})+' started','ok'); };
+    const ref=R.child('shifts').push(); await ref.set({loc,kind,seq,shiftDay:day,status:'open',by:MY_NAME,startedAt:Date.now(),openedAt:Date.now()}); closeModal(); beep('ok'); toast(shiftLabel({kind,seq})+' started','ok'); alog('shift_start',{text:shiftLabel({kind,seq})+' · '+day,loc:loc,ref:ref.key}); };
 }
 function shiftOpeningCount(id){ const sh=SHIFTS[id]||{}; openCount(sh.loc||curLoc,{title:'🔢 Opening count · '+shiftLabel(sh)+' · '+locName(sh.loc),intro:'Count everything in the room (scan or type). The count must match the opening stock. If something differs, you can confirm it as a discrepancy — it is recorded and fixed later.',purpose:'shift-start',shift:id,noApply:true,
   onDone:async r=>{ await R.child('shifts/'+id).update({status:'open',openedAt:Date.now(),startCount:{id:r.id,diffs:r.diffs,at:Date.now()}}); toast(shiftLabel(sh)+' started'+(r.diffs?' with '+r.diffs+' discrepancy(ies)':''),r.diffs?'warn':'ok',4000); }}); }
@@ -790,7 +784,7 @@ function endShift(id){ const sh=SHIFTS[id]; if(!sh) return; const f=shiftFigures
   if(live.length){ toast('End the game first: '+live.map(x=>SUBS[x].name).join(', '),'warn',4000); return; }
   if(!confirm('End '+shiftLabel(sh)+'?\nSold '+fmt(unitsOf(f.sale))+' · BUFP '+fmt(unitsOf(f.bufp))+' · game '+fmt(unitsOf(f.game)))) return;
   (async()=>{ const now=Date.now(); const f2=shiftFigures(Object.assign({id,closedAt:now},sh)); const rep={open:unitsOf(f2.open),close:unitsOf(f2.close),inn:unitsOf(f2.inn),out:unitsOf(f2.out),sale:unitsOf(f2.sale),bufp:unitsOf(f2.bufp),game:unitsOf(f2.game)};
-    await R.child('shifts/'+id).update({status:'closed',closedAt:now,closedBy:MY_NAME,report:rep}); beep('ok'); openShiftReport(id); })(); }
+    await R.child('shifts/'+id).update({status:'closed',closedAt:now,closedBy:MY_NAME,report:rep}); alog('shift_end',{text:shiftLabel(sh)+' · sales '+rep.sale+' · BUFP '+rep.bufp+' · game '+rep.game,loc:sh.loc,ref:id}); beep('ok'); openShiftReport(id); })(); }
 function shiftClosingCount(id){ const sh=SHIFTS[id]||{}; openCount(sh.loc,{title:'🔢 Closing count · '+shiftLabel(sh)+' · '+locName(sh.loc),intro:'Count the room again. The system already deducted this shift\'s sales and auctions, so the count should match what is on the shelf now.',purpose:'shift-end',shift:id,noApply:true,
   onDone:async r=>{ const now=Date.now(); const f=shiftFigures(Object.assign({id,closedAt:now},sh)); const rep={open:unitsOf(f.open),close:unitsOf(f.close),inn:unitsOf(f.inn),out:unitsOf(f.out),sale:unitsOf(f.sale),bufp:unitsOf(f.bufp),game:unitsOf(f.game),startDiffs:(sh.startCount||{}).diffs||0,endDiffs:r.diffs};
     await R.child('shifts/'+id).update({status:'closed',closedAt:now,closedBy:MY_NAME,endCount:{id:r.id,diffs:r.diffs,at:now},report:rep}); beep('ok'); openShiftReport(id); }}); }
@@ -865,7 +859,7 @@ function openTransferRequest(loc){ const cart=[]; let to=TR_NAME[loc]||'Stockroo
       const dt=new Date(); const id='TR-'+String(dt.getFullYear()).slice(2)+String(dt.getMonth()+1).padStart(2,'0')+String(dt.getDate()).padStart(2,'0')+'-'+Math.random().toString(36).slice(2,6).toUpperCase(); const now=Date.now();
       const t={id,type:'transfer',gameName:null,showName:null,requester:MY_NAME,createdAt:now,updatedAt:now,status:'pending',note,to,items:cart.map(c=>({ikey:c.ikey,name:c.name,variation:c.variation||'',barcode:c.barcode||'',image:c.image||'',qty:+c.qty||1,qtyApproved:null,qtyPrepared:null,from:''})),log:[{at:now,by:MY_NAME,text:'Request sent for review (from CPH INVENTORY · '+locName(loc)+')'}],submittedAt:now,source:'cph-inventory',sourceLoc:loc};
       try{ await SDB.ref(STATION_PATH+'/transfers/'+id).set(t); }catch(e){ toast('Could not save: '+(e.message||e),'err',4000); d.querySelector('#trSend').disabled=false; return; }
-      closeModal(); beep('ok'); toast('Request '+id+' sent → '+to,'ok',4000);
+      closeModal(); beep('ok'); toast('Request '+id+' sent → '+to,'ok',4000); alog('transfer_request',{text:id+' → '+to+' · '+cart.length+' line(s)',loc:loc,ref:id});
       try{ const r=await fetch(SLACK_PROXY_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({event:'new',by:MY_NAME,extra:'',link:TRANSFER_APP_URL+'#req/'+encodeURIComponent(id),request:t})}); const j=await r.json(); if(j&&j.ts) SDB.ref(STATION_PATH+'/transfers/'+id+'/slackTs').set(j.ts); }catch(e){ toast('Slack notification could not be sent','warn',3500); } };
     setTimeout(()=>sc.focus(),60); };
   draw(); }
@@ -912,16 +906,16 @@ function exportStockCsv(){ const day=$('#imDay').value||dayOf(Date.now()); const
    RENDER — menu
    ============================================================ */
 function renderMenu(){
-  $('#menuWho').textContent=MY_NAME+' · '+MY_ROLE;
+  $('#menuWho').textContent=MY_NAME+' · '+(window.CPAuth&&CPAuth.user?CPAuth.user.roleLabel:MY_ROLE);
   const openDisc=Object.values(DISC).filter(d=>d.status==='open').length; $('#mDiscN').textContent=openDisc; $('#mDiscN').classList.toggle('hide',!openDisc);
-  $('#tiles').innerHTML=LOCS.map(l=>{ const m=totalsAt(l.id); const subs=subsAt(l.id); const n=Object.keys(m).filter(k=>m[k]).length;
+  $('#tiles').innerHTML=LOCS.filter(l=>canLoc(l.id)).map(l=>{ const m=totalsAt(l.id); const subs=subsAt(l.id); const n=Object.keys(m).filter(k=>m[k]).length;
     const sh=l.kind==='stream'?openShiftAt(l.id):null; const badges=(sh?'<span class="badge '+(sh.status==='open'?'ok':'warn')+'">'+(sh.status==='open'?'● live · ':'')+shiftLabel(sh)+' · '+esc(sh.by)+'</span> ':'')+(subs.length?'<span class="badge sub">'+subs.length+' sub-location'+(subs.length>1?'s':'')+'</span> ':'')+(Object.values(DISC).filter(d=>d.status==='open'&&d.loc===l.id).length?'<span class="badge err">discrepancies</span>':'');
     return '<button class="tile" data-loc="'+l.id+'"><div class="micon">'+l.icon+'</div><div><div class="mname">'+esc(l.name.toUpperCase())+'</div><div class="mdesc">'+esc(l.desc)+'</div>'+(badges?'<div style="margin-top:7px">'+badges+'</div>':'')+'</div><div class="kpi">'+fmt(unitsOf(m))+'<small>'+n+' items</small></div></button>'; }).join('');
   $$('#tiles [data-loc]').forEach(b=>b.onclick=()=>openLoc(b.dataset.loc));
   const notes=[]; if(!DSOH&&DSOH_ERR) notes.push('<div class="note err">Daily SOH could not be read: '+esc(DSOH_ERR)+'</div>');
   $('#menuNotes').innerHTML=notes.join('');
 }
-function openLoc(id){ curLoc=id; lcTab=(LOC_BY_ID[id]||{}).kind==='stream'?'shift':'stock'; lcQ=''; expandedSub=null; show('loc'); renderLoc(); }
+function openLoc(id){ if(!canLoc(id)){ toast('Your role has no access to '+locName(id),'warn'); return; } curLoc=id; lcTab=(LOC_BY_ID[id]||{}).kind==='stream'?'shift':'stock'; lcQ=''; expandedSub=null; show('loc'); renderLoc(); }
 let expandedSub=null;
 function renderLoc(){
   const l=LOC_BY_ID[curLoc]; if(!l){ show('menu'); return; }
@@ -1098,7 +1092,7 @@ function goMenu(){ show('menu'); renderMenu(); }
 function applyHash(){ if(!MY_NAME) return; const m=/^#loc\/([a-z0-9]+)(?:\/(stock|subs|days|log))?$/.exec(location.hash||''); if(m&&LOC_BY_ID[m[1]]){ openLoc(m[1]); if(m[2]){ lcTab=m[2]; renderLoc(); } return; } const g=/^#game\/(.+)$/.exec(location.hash||''); if(g&&SUBS[decodeURIComponent(g[1])]) openGame(decodeURIComponent(g[1]),'menu'); }
 window.addEventListener('hashchange',applyHash);
 $('#homeBtn').onclick=goMenu; $('#lcBack').onclick=goMenu; $('#ovBack').onclick=goMenu; $('#dcBack').onclick=goMenu; $('#hsBack').onclick=goMenu;
-$('#logoutBtn').onclick=()=>{ try{ localStorage.removeItem('cph.name'); }catch(e){} location.reload(); };
+
 $('#mOverview').onclick=()=>{ show('overview'); renderOverview(); }; $('#mDisc').onclick=()=>{ show('disc'); renderDisc(); }; $('#mHistory').onclick=()=>{ show('history'); renderHistory(); };
 $('#mImport').onclick=()=>{ if(!isAdmin()) return; show('import'); $('#imDay').value=$('#imDay').value||dayOf(Date.now()); renderImport(); }; $('#imBack').onclick=goMenu; buildImportFields(); $('#imDay').addEventListener('change',renderImport); $('#imCsv').onclick=exportStockCsv;
 $('#mGame').onclick=openPlanGame; $('#lcGame').onclick=openPlanGame; $('#mBoxes').onclick=openBoxSettings;
@@ -1114,13 +1108,11 @@ $('#hsQ').addEventListener('input',renderHistory); $('#hsKind').addEventListener
 $('#hsCsv').onclick=()=>{ const l=$('#hsBody')._rows||[]; csv([['Time','Kind','Item','Qty','From','To','By','Note','Source']].concat(l.map(e=>[fmtTime(e.ts),e.kind,e.name,e.qty,locName(e.from),locName(e.to),e.by,e.note||'',e.src||''])),'cph_history.csv'); };
 
 /* ---------- gate ---------- */
-function roleOf(n){ return ELEVATED.includes(norm(n))?'admin':'staff'; }
-function enter(){ const v=$('#nameInput').value.trim(); if(v.length<2){ toast('Enter your name','warn'); return; } const role=roleOf(v);
-  if(role!=='staff'){ const pin=$('#pinInput'); if(pin.classList.contains('hide')){ pin.classList.remove('hide'); $('#gateHint').textContent='This name has extra permissions — enter the PIN.'; pin.focus(); return; } if(pin.value.trim()!==ELEVATED_PIN){ toast('Wrong PIN','err'); pin.value=''; pin.focus(); return; } }
-  MY_NAME=v; MY_ROLE=role; try{ localStorage.setItem('cph.name',v); }catch(e){} $('#meName').textContent=v+(role!=='staff'?' · '+role:''); $('#mBoxes').classList.toggle('hide',role!=='admin'); $('#mImport').classList.toggle('hide',role!=='admin'); $('#namegate').classList.add('hide'); $('#appHeader').classList.remove('hide'); $('#appMain').classList.remove('hide'); goMenu(); connect(); setTimeout(applyHash,400); }
-$('#enterBtn').onclick=enter; $('#nameInput').addEventListener('keydown',e=>{ if(e.key==='Enter') enter(); }); $('#pinInput').addEventListener('keydown',e=>{ if(e.key==='Enter') enter(); });
-$('#nameInput').addEventListener('input',()=>{ if(roleOf($('#nameInput').value)==='staff'){ $('#pinInput').classList.add('hide'); $('#gateHint').textContent='Your name goes on every movement you make.'; } });
-(function boot(){ try{ const s=localStorage.getItem('cph.name'); if(s){ $('#nameInput').value=s; if(roleOf(s)!=='staff'){ $('#pinInput').classList.remove('hide'); $('#gateHint').textContent='This name has extra permissions — enter the PIN.'; } } }catch(e){} applyLogo(); $('#buildTag').textContent='v'+BUILD; $('#gateSub').textContent='Calipokehouse · stock by location · v'+BUILD; })();
+/* ---- sign-in through CALIPOKE ADMIN ---- */
+(function boot(){ applyLogo(); $('#buildTag').textContent='v'+BUILD;
+  CPAuth.init({app:'inventory',header:'#hdrUser',onReady:u=>{ MY_NAME=u.name; MY_ROLE=u.role==='admin'?'admin':'staff';
+    $('#meName').textContent=u.name+' · '+u.roleLabel; $('#mBoxes').classList.toggle('hide',u.role!=='admin'); $('#mImport').classList.toggle('hide',u.role!=='admin');
+    $('#appHeader').classList.remove('hide'); $('#appMain').classList.remove('hide'); goMenu(); connect(); setTimeout(applyHash,400); }}); })();
 </script>
 </body>
 </html>
