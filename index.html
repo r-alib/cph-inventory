@@ -238,7 +238,7 @@ td.editable{cursor:pointer} td.editable:hover{background:#1a2338;box-shadow:inse
      packstation/transfers           → ready transfers become ledger events
    Day boundaries: calendar days (local time). Streamer rooms: day = day shift + night shift (build 3).
    ============================================================ */
-const BUILD='2026-11-11e';
+const BUILD='2026-11-17a';
 const INV_CONFIG={apiKey:"AIzaSyAsTYwU0qABmXKuYSpyendwHw3djJc-Bqo",authDomain:"calipoke-inventory.firebaseapp.com",databaseURL:"https://calipoke-inventory-default-rtdb.firebaseio.com",projectId:"calipoke-inventory",storageBucket:"calipoke-inventory.firebasestorage.app",messagingSenderId:"156640764541",appId:"1:156640764541:web:833f96e4b0849b53454714"};
 const STATION_CONFIG={apiKey:"AIzaSyB2I2sR9czF6F29OZMyEZubmwQGP7nWFlc",authDomain:"calipoke-packstation.firebaseapp.com",databaseURL:"https://calipoke-packstation-default-rtdb.firebaseio.com",projectId:"calipoke-packstation",storageBucket:"calipoke-packstation.firebasestorage.app",messagingSenderId:"125288117157",appId:"1:125288117157:web:461b4d553e100c07b9ae4c"};
 const ROOT='inv', STATION_PATH='packstation';
@@ -272,6 +272,7 @@ const norm=v=>(v==null?'':String(v)).trim().toLowerCase().replace(/\s+/g,' ');
 const clean=v=>(v==null?'':String(v)).toLowerCase().replace(/[^a-z0-9]/g,'');
 const keyOf=(n,va)=>norm(n)+'||'+norm(va);
 const fbKey=k=>String(k).replace(/[.#$\/\[\]]/g,'_');
+const hhmm=ts=>ts?new Date(ts).toLocaleString('en-US',{month:'numeric',day:'numeric',hour:'numeric',minute:'2-digit'}):'';
 const barcodesOf=s=>(s==null?'':String(s)).split(/[,;\n]+/).map(x=>norm(x)).filter(Boolean);
 const esc=s=>(s==null?'':String(s)).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const int=v=>{ const n=parseInt(v,10); return isFinite(n)?n:0; };
@@ -366,6 +367,7 @@ function connect(){
   R.child('ledger').orderByChild('ts').limitToLast(6000).on('value',s=>{ const a=[]; s.forEach(c=>{ const v=c.val(); if(v){ v.id=c.key; a.push(v); } }); LEDGER=a.sort((x,y)=>(x.ts||0)-(y.ts||0)); renderCurrent(); });
   R.child('discrepancies').on('value',s=>{ DISC=s.val()||{}; renderCurrent(); });
   R.child('counts').on('value',s=>{ COUNTS=s.val()||{}; renderCurrent(); });
+  R.child('countSessions').on('value',s=>{ CSESS=s.val()||{}; renderCurrent(); });
   R.child('boxes').on('value',s=>{ BOXES=s.val()||{}; renderCurrent(); });
   R.child('catalog').on('value',s=>{ CUSTOM={}; const v=s.val()||{}; for(const fk in v){ const c=v[fk]; if(c&&c.ikey) CUSTOM[c.ikey]=c; } setInventory(null); });
   R.child('shifts').on('value',s=>{ SHIFTS=s.val()||{}; renderCurrent(); });
@@ -508,31 +510,69 @@ async function returnSubAll(id){ const s=SUBS[id]; if(!s) return; const items=s.
 /* ============================================================
    COUNT a location (physical count vs system) — discrepancies
    ============================================================ */
-function openCount(loc,opts){ opts=opts||{}; let day=opts.day||dayOf(Date.now());
-  const expected=day>=dayOf(Date.now())?itemsAt(loc):(isSub(loc)?itemsAt(loc):mainAtTime(loc,tsForDay(day))); const lines={}; Object.keys(expected).forEach(k=>{ if(expected[k]) lines[k]={exp:+expected[k],cnt:null}; });
+let CSESS={};                 // count in progress: key -> {startedAt, by, day, lines}
+const countKey=(loc,opts)=>fbKey(loc)+((opts&&opts.shift)?'~'+fbKey(opts.shift):'');
+/* A count is a session: Start count fixes the moment and what the system expects then;
+   every line is saved as it is counted (the window can be closed and opened again);
+   Finish count records the result. A line is COUNTED when it was matched, scanned,
+   found by search or typed in — a line nobody touched stays NOT COUNTED. */
+function openCount(loc,opts){ opts=opts||{};
+  const sk=countKey(loc,opts), sess=CSESS[sk];
+  if(!sess){ countStartScreen(loc,opts); return; }
+  const day=sess.day||dayOf(Date.now()); const lines={};
+  const L0=sess.lines||{}; Object.keys(L0).forEach(fk=>{ const v=L0[fk]; if(!v) return; lines[v.item||fk]={exp:+v.exp||0,cnt:(v.cnt==null?null:+v.cnt),how:v.how||'',tmp:!!v.tmp,tmpName:v.tmpName||''}; });
+  const save=()=>{ const o={}; Object.keys(lines).forEach(k=>{ const l=lines[k]; o[fbKey(k)]={item:k,exp:l.exp,cnt:l.cnt==null?null:l.cnt,how:l.how||null,tmp:l.tmp||null,tmpName:l.tmpName||null}; });
+    (CSESS[sk]=CSESS[sk]||sess).lines=o; return R.child('countSessions/'+sk+'/lines').set(o).catch(e=>toast('Not saved: '+((e&&e.message)||e),'err',4000)); };
+  let flt='all';              // all | todo | done | diff
   let focusTo=null;   // where the cursor goes after a redraw: 'scan' | 'qi:<key>' | null
   const draw=()=>{
     const keys=Object.keys(lines).sort((a,b)=>(lines[a].tmp?1:0)-(lines[b].tmp?1:0)||itemInfo(a).name.localeCompare(itemInfo(b).name));
-    const counted=keys.filter(k=>lines[k].cnt!=null).length, diffs=keys.filter(k=>lines[k].cnt!=null&&lines[k].cnt!==lines[k].exp).length, left=keys.length-counted;
-    const d=modal('<h2>'+(opts.title||'🔢 Count · '+locName(loc))+(day>=dayOf(Date.now())?'':' <span class="badge warn">as of '+esc(day)+'</span>')+'</h2><p class="sub" style="font-size:13px">'+(opts.intro||'The list shows what the system expects. Scan each product or type its name — a quantity box opens; a second scan of the same product adds on top. The counted number can be corrected in the list. A product that is not here physically: press <b>Not here</b>.')+'</p>'+
+    const isC=k=>lines[k].cnt!=null, isD=k=>isC(k)&&lines[k].cnt!==lines[k].exp;
+    const chip=(v,t,n)=>'<button class="chip'+(flt===v?' on':'')+'" data-flt="'+v+'">'+t+' <b>'+n+'</b></button>';
+    let counted, diffs, left; const calc=()=>{ const ks=Object.keys(lines); counted=ks.filter(isC).length; diffs=ks.filter(isD).length; left=ks.length-counted; }; calc();
+    const stHTML=l=>l.cnt==null?'<span class="badge warn">not counted</span>':(l.cnt!==l.exp?'<span class="badge err">'+(l.how==='none'?'not here':'differs')+'</span>':'<span class="badge ok">✓ '+(l.how==='match'?'match':'counted')+'</span>');
+    const actHTML=(k,l)=>l.cnt==null?(l.tmp?'':'<button class="btn sm primary" data-match="'+esc(k)+'" title="The quantity is right — '+fmt(l.exp)+'">✓ Match</button> <button class="btn sm ghost" data-none="'+esc(k)+'" title="This product is not here physically">∅ Not here</button>'):'<button class="btn sm ghost" data-clear="'+esc(k)+'" title="Back to not counted">↺</button>';
+    const kvHTML=()=>'<div class="kv"><div class="n">'+Object.keys(lines).length+'</div><div class="l">lines</div></div><div class="kv '+(left?'warn':'ok')+'"><div class="n">'+counted+'</div><div class="l">counted</div></div><div class="kv '+(left?'warn':'ok')+'"><div class="n">'+left+'</div><div class="l">not counted</div></div><div class="kv '+(diffs?'err':'ok')+'"><div class="n">'+diffs+'</div><div class="l">differ</div></div>';
+    const chipsHTML=()=>chip('all','All',Object.keys(lines).length)+chip('todo','Not counted',left)+chip('done','Counted',counted)+chip('diff','Differ',diffs);
+    const footHTML=()=>left?left+' line(s) not counted yet.':'Every line is counted'+(diffs?' · '+diffs+' differ':' — all match')+'.';
+    const vis=keys.filter(k=>flt==='all'||(flt==='todo'&&!isC(k))||(flt==='done'&&isC(k))||(flt==='diff'&&isD(k)));
+    const d=modal('<h2>'+(opts.title||'🔢 Count · '+locName(loc))+(day>=dayOf(Date.now())?'':' <span class="badge warn">as of '+esc(day)+'</span>')+'</h2>'+
+      '<p class="sub" style="font-size:13px"><span class="badge info">started '+esc(hhmm(sess.startedAt))+(sess.by?' · '+esc(sess.by):'')+'</span> '+(opts.intro||'The list is what the system expected when the count started. If the quantity is right, press <b>✓ Match</b>. Otherwise scan the product, find it by name, or type the number into <b>Counted</b>. Not here physically: <b>∅ Not here</b>. A line you did not touch stays <b>not counted</b>. Everything is saved as you go — you can close this window and continue later.')+'</p>'+
       '<div class="scanwrap" style="margin-top:10px"><div class="scanrow" style="position:relative"><input id="ctScan" autocomplete="off" placeholder="Scan or type a product…"><button class="btn" id="ctCam">📷</button><div class="sugg hide" id="ctSugg"></div></div></div>'+
-      '<div class="kvs"><div class="kv"><div class="n">'+keys.length+'</div><div class="l">lines</div></div><div class="kv '+(left?'warn':'ok')+'"><div class="n">'+counted+'</div><div class="l">counted</div></div><div class="kv '+(diffs?'err':'ok')+'"><div class="n">'+diffs+'</div><div class="l">differ</div></div></div>'+
-      '<div class="tscroll" style="max-height:44vh"><table><thead><tr><th></th><th>Item</th><th class="num">Expected</th><th class="num">Counted</th><th class="num">Δ</th><th></th></tr></thead><tbody>'+
-      (keys.length?keys.map(k=>{ const l=lines[k], it=itemInfo(k); const cls=l.cnt==null?'':(l.cnt===l.exp?'good':'bad');
-        return '<tr class="'+cls+'"><td>'+img(it.image,'thumb zoomable')+'</td><td class="name">'+(l.tmp?'<span class="badge warn">temp</span> ':'')+nm(it)+(varOf(it.variation)?' <span class="mini">· '+esc(it.variation)+'</span>':'')+'</td><td class="num">'+fmt(l.exp)+'</td>'+
-          '<td class="num">'+(l.cnt==null?'<span class="mini">not scanned</span>':'<input class="qi'+(l.cnt===l.exp?' same':' diff')+'" data-k="'+esc(k)+'" value="'+l.cnt+'">')+'</td><td class="num d">'+(l.cnt==null?'':((l.cnt-l.exp>0?'+':'')+(l.cnt-l.exp)))+'</td>'+
-          '<td>'+(l.cnt==null&&!l.tmp?'<button class="btn sm ghost" data-none="'+esc(k)+'" title="This product is not here physically">∅ Not here</button>':(l.cnt!=null?'<button class="btn sm ghost" data-clear="'+esc(k)+'" title="Clear this count">↺</button>':''))+'</td></tr>'; }).join(''):'<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:20px">The system expects nothing here — scan what you find.</td></tr>')+'</tbody></table></div>'+
-      '<div class="row" style="margin-top:14px">'+(isAdmin()&&!opts.shift?'<span class="mini">as of</span><input id="ctDay" class="tinput" type="date" value="'+day+'" max="'+dayOf(Date.now())+'" style="font-family:var(--body);color-scheme:dark;padding:6px 8px" title="Count for a past day: corrections are dated to the end of that day and ripple forward">':'')+(isAdmin()?'<span class="mini">admin · test:</span><button class="btn sm ghost" id="ctAllMatch" title="Fill every line with the expected number">✓ All match</button><button class="btn sm ghost" id="ctNothing" title="Fill every line with 0">∅ Nothing here</button>':'')+'<div class="spacer"></div><button class="btn ghost" id="ctX">Cancel</button>'+
-      (isAdmin()&&!opts.noApply?'<button class="btn warn" id="ctApply" '+(left?'disabled':'')+'>✎ Apply corrections</button>':'')+
-      '<button class="btn primary" id="ctSave" '+(left?'disabled':'')+'>'+(diffs?'✓ Confirm with '+diffs+' discrepanc'+(diffs===1?'y':'ies'):'✓ Confirm — all match')+'</button></div>'+(left?'<p class="mini" style="margin-top:8px;color:var(--warn)">'+left+' line(s) not scanned yet — scan them, or mark the ones that are not here.</p>':''),true);
-    d.querySelectorAll('.qi').forEach(i=>{ i.addEventListener('change',()=>{ const v=i.value.trim(); lines[i.dataset.k].cnt=v===''?null:Math.max(0,int(v)); focusTo=null; draw(); }); i.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); i.blur(); } }); });
-    d.querySelectorAll('[data-none]').forEach(b=>b.onclick=()=>{ const k=b.dataset.none; if(!confirm(itemInfo(k).name+' — expected '+fmt(lines[k].exp)+', confirm that it is NOT here (counted 0)?')) return; lines[k].cnt=0; focusTo='scan'; draw(); });
-    d.querySelectorAll('[data-clear]').forEach(b=>b.onclick=()=>{ const k=b.dataset.clear; if(lines[k].tmp) delete lines[k]; else lines[k].cnt=null; focusTo='scan'; draw(); });
-    d.querySelector('#ctX').onclick=()=>{ if(!counted||confirm('Leave the count? Nothing is saved.')) closeModal(); };
-    const cd=d.querySelector('#ctDay'); if(cd) cd.addEventListener('change',()=>{ const v=cd.value||dayOf(Date.now()); closeModal(); openCount(loc,Object.assign({},opts,{day:v})); });
-    const am=d.querySelector('#ctAllMatch'); if(am) am.onclick=()=>{ keys.forEach(k=>{ if(!lines[k].tmp) lines[k].cnt=lines[k].exp; }); focusTo=null; draw(); }; const nh=d.querySelector('#ctNothing'); if(nh) nh.onclick=()=>{ if(!confirm('Set every line to 0?')) return; keys.forEach(k=>{ if(!lines[k].tmp) lines[k].cnt=0; }); focusTo=null; draw(); };
+      '<div class="kvs" id="ctKv">'+kvHTML()+'</div>'+
+      '<div class="chipsel" style="margin-top:10px" id="ctChips">'+chipsHTML()+'</div>'+
+      '<div class="tscroll" style="max-height:44vh"><table><thead><tr><th></th><th>Item</th><th>Status</th><th class="num">Expected</th><th class="num">Counted</th><th class="num">Δ</th><th></th></tr></thead><tbody>'+
+      (vis.length?vis.map(k=>{ const l=lines[k], it=itemInfo(k); const cls=l.cnt==null?'miss':(l.cnt===l.exp?'good':'bad');
+        return '<tr class="'+cls+'"><td>'+img(it.image,'thumb zoomable')+'</td><td class="name">'+(l.tmp?'<span class="badge warn">temp</span> ':'')+nm(it)+(varOf(it.variation)?' <span class="mini">· '+esc(it.variation)+'</span>':'')+'</td><td>'+stHTML(l)+'</td><td class="num">'+fmt(l.exp)+'</td>'+
+          '<td class="num"><input class="qi'+(l.cnt==null?'':(l.cnt===l.exp?' same':' diff'))+'" data-k="'+esc(k)+'" value="'+(l.cnt==null?'':l.cnt)+'" placeholder="—" inputmode="numeric" title="Type the counted number"></td><td class="num d">'+(l.cnt==null?'':((l.cnt-l.exp>0?'+':'')+(l.cnt-l.exp)))+'</td>'+
+          '<td style="white-space:nowrap">'+actHTML(k,l)+'</td></tr>'; }).join('')
+        :'<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:20px">'+(keys.length?(flt==='todo'?'Everything is counted — press Finish count.':'Nothing in this filter.'):'The system expects nothing here — scan what you find.')+'</td></tr>')+'</tbody></table></div>'+
+      '<div class="row" style="margin-top:14px">'+(isAdmin()?'<span class="mini">admin:</span><button class="btn sm ghost" id="ctAllMatch" title="Mark every line that is not counted yet as matching">✓ All match</button><button class="btn sm ghost" id="ctNothing" title="Mark every line that is not counted yet as 0">∅ Nothing here</button>':'')+
+      '<button class="btn sm ghost" id="ctDiscard" title="Throw this count away">✕ Discard count</button><div class="spacer"></div><button class="btn ghost" id="ctX" title="The count is saved — open Count again to continue">Close — continue later</button>'+
+      (isAdmin()&&!opts.noApply?'<button class="btn warn" id="ctApply" '+(counted?'':'disabled')+'>✎ Finish &amp; apply corrections</button>':'')+
+      '<button class="btn primary" id="ctSave" '+(counted?'':'disabled')+'>■ Finish count</button></div>'+
+      '<p class="mini" id="ctFoot" style="margin-top:8px;color:var(--'+(left?'warn':'ok')+')">'+footHTML()+'</p>',true);
+    const wireChips=()=>d.querySelectorAll('[data-flt]').forEach(b=>b.onclick=()=>{ flt=b.dataset.flt; focusTo=null; draw(); });
+    const wireActs=root=>{
+      root.querySelectorAll('[data-match]').forEach(b=>b.onclick=()=>{ const l=lines[b.dataset.match]; l.cnt=l.exp; l.how='match'; save(); focusTo=null; draw(); });
+      root.querySelectorAll('[data-none]').forEach(b=>b.onclick=()=>{ const k=b.dataset.none; if(!confirm(itemInfo(k).name+' — expected '+fmt(lines[k].exp)+', confirm that it is NOT here (counted 0)?')) return; lines[k].cnt=0; lines[k].how='none'; save(); focusTo='scan'; draw(); });
+      root.querySelectorAll('[data-clear]').forEach(b=>b.onclick=()=>{ const k=b.dataset.clear; if(lines[k].tmp||!lines[k].exp) delete lines[k]; else { lines[k].cnt=null; lines[k].how=''; } save(); focusTo='scan'; draw(); }); };
+    wireChips(); wireActs(d);
+    /* a number typed into Counted updates its row in place — the list is not rebuilt, so the cursor can go straight to the next row */
+    d.querySelectorAll('.qi').forEach(i=>{ i.addEventListener('change',()=>{ if(!i.isConnected) return; const k=i.dataset.k, l=lines[k]; if(!l) return; const v=i.value.trim();
+        l.cnt=v===''?null:Math.max(0,int(v)); l.how=l.cnt==null?'':'manual'; i.value=l.cnt==null?'':l.cnt; save(); calc();
+        const tr=i.closest('tr'); tr.className=l.cnt==null?'miss':(l.cnt===l.exp?'good':'bad'); i.className='qi'+(l.cnt==null?'':(l.cnt===l.exp?' same':' diff'));
+        tr.children[2].innerHTML=stHTML(l); tr.children[5].textContent=l.cnt==null?'':((l.cnt-l.exp>0?'+':'')+(l.cnt-l.exp)); tr.children[6].innerHTML=actHTML(k,l); wireActs(tr.children[6]);
+        d.querySelector('#ctKv').innerHTML=kvHTML(); d.querySelector('#ctChips').innerHTML=chipsHTML(); wireChips();
+        const ft=d.querySelector('#ctFoot'); ft.textContent=footHTML(); ft.style.color='var(--'+(left?'warn':'ok')+')';
+        d.querySelector('#ctSave').disabled=!counted; const ap0=d.querySelector('#ctApply'); if(ap0) ap0.disabled=!counted; });
+      i.addEventListener('keydown',e=>{ if(e.key!=='Enter') return; e.preventDefault(); const all=[...d.querySelectorAll('.qi')], n=all[all.indexOf(i)+1]; if(n){ n.focus(); n.select(); } else i.blur(); }); });
+    d.querySelector('#ctX').onclick=()=>{ closeModal(); toast('Count saved — open Count to continue','ok'); };
+    d.querySelector('#ctDiscard').onclick=async()=>{ if(!confirm('Discard this count? '+counted+' counted line(s) will be lost.')) return; await R.child('countSessions/'+sk).remove(); delete CSESS[sk]; closeModal(); toast('Count discarded','ok'); renderCurrent(); };
+    const am=d.querySelector('#ctAllMatch'); if(am) am.onclick=()=>{ keys.forEach(k=>{ const l=lines[k]; if(!l.tmp&&l.cnt==null){ l.cnt=l.exp; l.how='match'; } }); save(); focusTo=null; draw(); };
+    const nh=d.querySelector('#ctNothing'); if(nh) nh.onclick=()=>{ if(!confirm('Set every line that is not counted yet to 0?')) return; keys.forEach(k=>{ const l=lines[k]; if(!l.tmp&&l.cnt==null){ l.cnt=0; l.how='none'; } }); save(); focusTo=null; draw(); };
     const sc=d.querySelector('#ctScan'), sg=d.querySelector('#ctSugg');
-    const pick=k=>{ k=fbKey(k); sc.value=''; sg.classList.add('hide'); if(!lines[k]) lines[k]={exp:qtyAtTime(loc,k,tsForDay(day)),cnt:null}; askQty(k); };
+    const pick=k=>{ k=fbKey(k); sc.value=''; sg.classList.add('hide'); if(!lines[k]) lines[k]={exp:qtyAtTime(loc,k,day>=dayOf(Date.now())?(sess.startedAt||Date.now()):tsForDay(day)),cnt:null}; askQty(k); };
     const tempItem=()=>{ sg.classList.add('hide'); const pre=sc.value.trim(); sc.value='';
       const q=modal('<h2>Temporary item name</h2><p class="sub" style="font-size:13px">The product is not in the catalog (or cannot be found). Write what it is — Admin / Celina will match it to the right product later.</p><div class="fld"><label>What is it?</label><input id="tiName" class="tinput" style="font-family:var(--body)" value="'+esc(pre)+'" placeholder="e.g. Blue booster box, no barcode"></div><div class="row" style="margin-top:14px"><button class="btn primary lg" id="tiOk" style="flex:1">Continue → quantity</button><button class="btn ghost" id="tiX">Cancel</button></div>');
       q.querySelector('#tiX').onclick=()=>{ focusTo='scan'; draw(); }; const inp=q.querySelector('#tiName');
@@ -541,21 +581,44 @@ function openCount(loc,opts){ opts=opts||{}; let day=opts.day||dayOf(Date.now())
     const askQty=k=>{ const it=itemInfo(k), l=lines[k]; const had=l.cnt==null?0:l.cnt;
       const q=modal('<h2>'+(l.cnt==null?'How many?':'How many more?')+'</h2><div class="pcard">'+img(it.image)+'<div><div class="cn">'+nm(it)+'</div><div class="cv">'+esc(varOf(it.variation))+'</div><div class="cv">Expected: <b style="color:var(--ink)">'+fmt(l.exp)+'</b>'+(l.cnt!=null?' · already counted <b style="color:var(--ink)">'+had+'</b> — this is added on top':'')+'</div></div></div><input id="cqQ" class="bigqty" type="number" min="0" value="1"><div class="row"><button class="btn sm" data-q="6">+6</button><button class="btn sm" data-q="12">+12</button><button class="btn sm" data-q="24">+24</button>'+(l.cnt==null&&l.exp>1?'<button class="btn sm ghost" id="cqAll">All expected ('+fmt(l.exp)+')</button>':'')+'</div><button class="btn primary lg" id="cqOk" style="width:100%;margin-top:12px">Add to the count</button><button class="btn ghost" id="cqX" style="width:100%;margin-top:8px">Cancel</button>');
       const inp=q.querySelector('#cqQ'); q.querySelectorAll('[data-q]').forEach(b=>b.onclick=()=>{ inp.value=int(inp.value)+(+b.dataset.q); }); const al=q.querySelector('#cqAll'); if(al) al.onclick=()=>{ inp.value=l.exp; };
-      q.querySelector('#cqX').onclick=()=>{ if(l.tmp&&l.cnt==null) delete lines[k]; focusTo='scan'; draw(); };
-      const ok=()=>{ l.cnt=had+Math.max(0,int(inp.value)); beep('ok'); focusTo='scan'; draw(); }; q.querySelector('#cqOk').onclick=ok; inp.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); ok(); } }); setTimeout(()=>{ inp.focus(); inp.select(); },50); };
+      q.querySelector('#cqX').onclick=()=>{ if(l.cnt==null&&(l.tmp||!l.exp)) delete lines[k]; focusTo='scan'; draw(); };
+      const ok=()=>{ l.cnt=had+Math.max(0,int(inp.value)); l.how='scan'; save(); beep('ok'); focusTo='scan'; draw(); }; q.querySelector('#cqOk').onclick=ok; inp.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); ok(); } }); setTimeout(()=>{ inp.focus(); inp.select(); },50); };
     const tempBtn='<button class="mpick" data-tmp="1" style="border-style:dashed"><div style="width:44px;height:44px;border-radius:8px;background:var(--raised);display:grid;place-items:center;font-size:20px">✎</div><div><div class="pn">Temporary item name</div><div class="pv">not in the list — describe it, admin fixes it later</div></div><span class="pt"></span></button>';
     const sugg=()=>{ const v=sc.value.trim(); if(!v){ sg.classList.add('hide'); return; } const rows=searchProducts(v,12); sg.innerHTML=rows.map((p,i)=>'<button class="mpick" data-i="'+i+'">'+img(p.image)+'<div><div class="pn">'+nm(p)+'</div><div class="pv">'+esc(varOf(p.variation))+'</div></div><span class="pt'+(lines[fbKey(p.ikey)]?' here':'')+'">'+(lines[fbKey(p.ikey)]?'expected '+fmt(lines[fbKey(p.ikey)].exp):'')+'</span></button>').join('')+tempBtn; sg.classList.remove('hide'); sg.querySelectorAll('.mpick[data-i]').forEach(b=>b.onmousedown=e=>{ e.preventDefault(); pick(rows[+b.dataset.i].ikey); }); sg.querySelector('[data-tmp]').onmousedown=e=>{ e.preventDefault(); tempItem(); }; };
     sc.addEventListener('input',sugg); sc.addEventListener('keydown',e=>{ if(e.key!=='Enter') return; e.preventDefault(); const v=norm(sc.value); if(!v) return; const bk=BC[v]; if(bk&&bk.length===1){ pick(bk[0]); return; } const rows=searchProducts(v,2); if(rows.length===1){ pick(rows[0].ikey); return; } if(bk&&bk.length>1){ pick(bk[0]); return; } if(!rows.length){ beep('warn'); toast('Nothing matches "'+sc.value+'" — pick "Temporary item name" below','warn',3500); sugg(); } });
     sc.addEventListener('blur',()=>setTimeout(()=>sg.classList.add('hide'),150));
     d.querySelector('#ctCam').onclick=()=>openCam(code=>{ sc.value=code; sc.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter'})); });
-    const finish=async(apply)=>{ const id=R.child('counts/'+loc).push().key; const out={}; keys.forEach(k=>out[fbKey(k)]={exp:lines[k].exp,cnt:lines[k].cnt,item:k,tmp:!!lines[k].tmp}); await R.child('counts/'+loc+'/'+id).set({at:Date.now(),day,by:MY_NAME,lines:out,applied:!!apply,diffs,purpose:opts.purpose||'count',shift:opts.shift||null});
-      for(const k of keys){ const l=lines[k]; if(l.cnt===l.exp) continue; if(apply&&!l.tmp){ const diff=l.cnt-l.exp; await postEvent({ts:tsForDay(day),item:k,qty:Math.abs(diff),from:diff<0?loc:null,to:diff>0?loc:null,kind:'adjust',note:'count correction · '+locName(loc)+(day>=dayOf(Date.now())?'':' · as of '+day)}); }
+    const finish=async(apply)=>{ const id=R.child('counts/'+loc).push().key; const out={}; keys.forEach(k=>out[fbKey(k)]={exp:lines[k].exp,cnt:lines[k].cnt==null?null:lines[k].cnt,item:k,tmp:!!lines[k].tmp,how:lines[k].how||null});
+      await R.child('counts/'+loc+'/'+id).set({at:Date.now(),startedAt:sess.startedAt||null,day,by:MY_NAME,startedBy:sess.by||null,lines:out,applied:!!apply,diffs,counted,notCounted:left,purpose:opts.purpose||'count',shift:opts.shift||null});
+      for(const k of keys){ const l=lines[k]; if(l.cnt==null||l.cnt===l.exp) continue;                       // not counted: nothing is recorded for it
+        if(apply&&!l.tmp){ const diff=l.cnt-l.exp; await postEvent({ts:tsForDay(day),item:k,qty:Math.abs(diff),from:diff<0?loc:null,to:diff>0?loc:null,kind:'adjust',note:'count correction · '+locName(loc)+(day>=dayOf(Date.now())?'':' · as of '+day)}); }
         else await R.child('discrepancies').push({at:Date.now(),loc,item:k,name:itemInfo(k).name,exp:l.exp,cnt:l.cnt,by:MY_NAME,status:'open',countId:id,purpose:opts.purpose||'count',shift:opts.shift||null,tmp:!!l.tmp}); }
-      alog('count',{text:(opts.title||'count')+' · '+keys.length+' lines · '+diffs+' differ'+(apply?' · applied':''),loc:loc,ref:id}); closeModal(); beep(diffs?'warn':'ok'); toast(apply?'Count applied · '+diffs+' line(s) corrected':(diffs?diffs+' discrepanc'+(diffs===1?'y':'ies')+' recorded for review':'Count confirmed — everything matches'),diffs&&!apply?'warn':'ok',4000); if(opts.onDone) opts.onDone({id,diffs,applied:!!apply,lines:out}); };
-    d.querySelector('#ctSave').onclick=()=>finish(false); const ap=d.querySelector('#ctApply'); if(ap) ap.onclick=()=>{ if(confirm('Apply '+diffs+' correction(s) to the stock now?'+(keys.some(k=>lines[k].tmp)?'\nTemporary items are not applied — they go to Discrepancies for matching.':''))) finish(true); };
+      await R.child('countSessions/'+sk).remove(); delete CSESS[sk];
+      alog('count',{text:(opts.title||'count')+' · '+keys.length+' lines · '+counted+' counted · '+left+' not counted · '+diffs+' differ'+(apply?' · applied':''),loc:loc,ref:id}); closeModal(); beep(diffs?'warn':'ok');
+      toast((apply?'Count applied · '+diffs+' line(s) corrected':(diffs?diffs+' discrepanc'+(diffs===1?'y':'ies')+' recorded for review':'Count finished — everything counted matches'))+(left?' · '+left+' not counted':''),(diffs&&!apply)||left?'warn':'ok',4500);
+      renderCurrent(); if(opts.onDone) opts.onDone({id,diffs,applied:!!apply,lines:out,notCounted:left}); };
+    const ask=apply=>{ const msg=(left?left+' line(s) are NOT counted — they stay as they are and are marked “not counted” in the result.\n\n':'')+(apply?'Finish the count and apply '+diffs+' correction(s) to the stock now?'+(keys.some(k=>lines[k].tmp)?'\nTemporary items are not applied — they go to Discrepancies for matching.':''):'Finish the count?'+(diffs?'\n'+diffs+' discrepanc'+(diffs===1?'y':'ies')+' will be recorded for review.':''));
+      if(confirm(msg)) finish(apply); };
+    d.querySelector('#ctSave').onclick=()=>ask(false); const ap=d.querySelector('#ctApply'); if(ap) ap.onclick=()=>ask(true);
     if(focusTo==='scan'||focusTo===null&&!counted) setTimeout(()=>sc.focus(),60); focusTo='scan';
   };
   draw();
+}
+/* the screen before a count: nothing is compared until Start count is pressed */
+function countStartScreen(loc,opts){ let day=opts.day||dayOf(Date.now());
+  const expFor=()=>day>=dayOf(Date.now())?itemsAt(loc):(isSub(loc)?itemsAt(loc):mainAtTime(loc,tsForDay(day)));
+  const show=()=>{ const e=expFor(); const ks=Object.keys(e).filter(k=>e[k]); const units=ks.reduce((a,k)=>a+(+e[k]||0),0);
+    const d=modal('<h2>'+(opts.title||'🔢 Count · '+locName(loc))+'</h2><p class="sub" style="font-size:13px">Press <b>Start count</b> when you begin. The system fixes this moment and what it expects here — the whole list is shown and compared with it. The count is saved line by line: you can close the window and continue later, and it ends only when you press <b>Finish count</b>.</p>'+
+      '<div class="kvs"><div class="kv"><div class="n">'+ks.length+'</div><div class="l">products expected</div></div><div class="kv"><div class="n">'+fmt(units)+'</div><div class="l">units expected</div></div></div>'+
+      '<div class="row" style="margin-top:16px">'+(isAdmin()&&!opts.shift?'<span class="mini">as of</span><input id="ctDay" class="tinput" type="date" value="'+day+'" max="'+dayOf(Date.now())+'" style="font-family:var(--body);color-scheme:dark;padding:6px 8px" title="Count for a past day: corrections are dated to the end of that day and ripple forward">':'')+
+      '<div class="spacer"></div><button class="btn ghost" id="csX">Cancel</button><button class="btn primary lg" id="csGo">▶ Start count</button></div>');
+    const cd=d.querySelector('#ctDay'); if(cd) cd.addEventListener('change',()=>{ day=cd.value||dayOf(Date.now()); show(); });
+    d.querySelector('#csX').onclick=closeModal;
+    d.querySelector('#csGo').onclick=async()=>{ const e2=expFor(), L={}; Object.keys(e2).forEach(k=>{ if(e2[k]) L[fbKey(k)]={item:k,exp:+e2[k]}; });
+      const sk=countKey(loc,opts), rec={startedAt:Date.now(),by:MY_NAME,day,loc,purpose:opts.purpose||'count',shift:opts.shift||null,lines:L};
+      CSESS[sk]=rec; await R.child('countSessions/'+sk).set(rec); alog('count_start',{text:'Started '+(opts.title||'count · '+locName(loc))+' · '+Object.keys(L).length+' lines',loc:loc}); openCount(loc,opts); renderCurrent(); };
+  };
+  show();
 }
 
 /* ============================================================
@@ -924,7 +987,7 @@ let expandedSub=null;
 function renderLoc(){
   const l=LOC_BY_ID[curLoc]; if(!l){ show('menu'); return; }
   $('#lcTitle').textContent=l.icon+' '+l.name; const tot=totalsAt(curLoc); $('#lcItems').textContent=Object.keys(tot).filter(k=>tot[k]).length; $('#lcUnits').textContent=fmt(unitsOf(tot));
-  $('#lcCount').classList.toggle('hide',curLoc==='warehouse'); $('#lcReq').classList.toggle('hide',curLoc==='warehouse'); $('#lcReq').onclick=()=>openTransferRequest(curLoc); $('#lcNewSub').classList.toggle('hide',curLoc==='warehouse'); $('#lcGame').classList.toggle('hide',l.kind==='warehouse'||l.kind==='show'||!canPlanGame()); if(isStreamer()){ $('#lcCount').classList.add('hide'); $('#lcNewSub').classList.add('hide'); }
+  $('#lcCount').classList.toggle('hide',curLoc==='warehouse'); { const cs=CSESS[fbKey(curLoc)], b=$('#lcCount'); b.textContent=cs?'🔢 Continue count · since '+hhmm(cs.startedAt):'🔢 Count'; b.classList.toggle('warn',!!cs); b.title=cs?'A count started by '+(cs.by||'someone')+' is in progress':''; } $('#lcReq').classList.toggle('hide',curLoc==='warehouse'); $('#lcReq').onclick=()=>openTransferRequest(curLoc); $('#lcNewSub').classList.toggle('hide',curLoc==='warehouse'); $('#lcGame').classList.toggle('hide',l.kind==='warehouse'||l.kind==='show'||!canPlanGame()); if(isStreamer()){ $('#lcCount').classList.add('hide'); $('#lcNewSub').classList.add('hide'); }
   const strm=isStreamer(); ['days','log'].forEach(t=>$('#lcTabs [data-t="'+t+'"]').classList.toggle('hide',strm)); if(strm&&(lcTab==='days'||lcTab==='log')) lcTab=l.kind==='stream'?'shift':'stock';
   $('#lcTabs [data-t="shift"]').classList.toggle('hide',l.kind!=='stream'); if(lcTab==='shift'&&l.kind!=='stream') lcTab='stock';
   $('#lcTabs [data-t="subs"]').textContent=l.kind==='stream'?'🎲 Games':l.kind==='show'?'🚐 Shows':'🧺 Sub-locations';
