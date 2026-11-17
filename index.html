@@ -238,7 +238,7 @@ td.editable{cursor:pointer} td.editable:hover{background:#1a2338;box-shadow:inse
      packstation/transfers           → ready transfers become ledger events
    Day boundaries: calendar days (local time). Streamer rooms: day = day shift + night shift (build 3).
    ============================================================ */
-const BUILD='2026-11-17b';
+const BUILD='2026-11-17c';
 const INV_CONFIG={apiKey:"AIzaSyAsTYwU0qABmXKuYSpyendwHw3djJc-Bqo",authDomain:"calipoke-inventory.firebaseapp.com",databaseURL:"https://calipoke-inventory-default-rtdb.firebaseio.com",projectId:"calipoke-inventory",storageBucket:"calipoke-inventory.firebasestorage.app",messagingSenderId:"156640764541",appId:"1:156640764541:web:833f96e4b0849b53454714"};
 const STATION_CONFIG={apiKey:"AIzaSyB2I2sR9czF6F29OZMyEZubmwQGP7nWFlc",authDomain:"calipoke-packstation.firebaseapp.com",databaseURL:"https://calipoke-packstation-default-rtdb.firebaseio.com",projectId:"calipoke-packstation",storageBucket:"calipoke-packstation.firebasestorage.app",messagingSenderId:"125288117157",appId:"1:125288117157:web:461b4d553e100c07b9ae4c"};
 const ROOT='inv', STATION_PATH='packstation';
@@ -246,8 +246,8 @@ const INVENTORY_SHEET_URL='https://docs.google.com/spreadsheets/d/13vYpuca93GKyR
 const WAREHOUSE_PLAN_URL='https://r-alib.github.io/calipoke-station/warehouse-plan.html';   // TODO: real address of warehouse-plan.html
 const TRANSFER_APP_URL='https://r-alib.github.io/calipoke-transfer/';
 const SLACK_PROXY_URL='https://script.google.com/macros/s/AKfycbzQjkmHSg9fh-diBIRyN-GK4DcWeZn_EAHGBqypDEhl8Bia3FYHM9Txq-tLaKPK2n1Y9g/exec';   // same relay as Transfer Request
-const TR_LOCATIONS=['Warehouse','Stockroom','Tiktok 1','Ebay','What Not','Single & Slab','Card Show'];
-const TR_NAME={stockroom:'Stockroom',tiktok1:'Tiktok 1',ebay:'Ebay',whatnot:'What Not',singleslab:'Single & Slab',cardshow:'Card Show'};
+const TR_LOCATIONS=['Warehouse','Stockroom','Streaming Game Area','Tiktok 1','Ebay','What Not','Single & Slab','Card Show'];
+const TR_NAME={stockroom:'Stockroom',gamearea:'Streaming Game Area',tiktok1:'Tiktok 1',ebay:'Ebay',whatnot:'What Not',singleslab:'Single & Slab',cardshow:'Card Show'};
 const LOGO_URL='https://i.postimg.cc/VkfXDqWf/images.jpg';
 const INV_CACHE_MS=20*60*1000;
 /* sign-in, roles and the activity history come from calipoke-auth.js (CALIPOKE ADMIN) */
@@ -255,6 +255,7 @@ const INV_CACHE_MS=20*60*1000;
 const LOCS=[
   {id:'warehouse',  name:'Warehouse',       icon:'🏭', kind:'warehouse', desc:'Arcadia warehouse · read from the inventory count'},
   {id:'stockroom',  name:'Stockroom',       icon:'🗄️', kind:'room',      desc:'Main store of goods for the rooms and games'},
+  {id:'gamearea',   name:'Streaming Game Area', icon:'🎲', kind:'room', desc:'Stock for streaming games · build games and bundles, open boxes'},
   {id:'tiktok1',    name:'TikTok 1',        icon:'📱', kind:'stream',    desc:'Main TikTok channel room'},
   {id:'ebay',       name:'Ebay',            icon:'🛒', kind:'stream',    desc:'Ebay live room'},
   {id:'whatnot',    name:'WhatNot',         icon:'🎥', kind:'stream',    desc:'WhatNot live room'},
@@ -263,7 +264,7 @@ const LOCS=[
 ];
 const LOC_BY_ID=Object.fromEntries(LOCS.map(l=>[l.id,l]));
 /* names used by the Transfer Request app → location id */
-const LOC_ALIAS={'warehouse':'warehouse','stockroom':'stockroom','tiktok 1':'tiktok1','ebay':'ebay','what not':'whatnot','whatnot':'whatnot','single & slab':'singleslab','slab & single':'singleslab','streaming game':'stockroom','card show':'cardshow'};
+const LOC_ALIAS={'warehouse':'warehouse','stockroom':'stockroom','tiktok 1':'tiktok1','ebay':'ebay','what not':'whatnot','whatnot':'whatnot','single & slab':'singleslab','slab & single':'singleslab','streaming game':'stockroom','streaming game area':'gamearea','game area':'gamearea','card show':'cardshow'};
 const ROOM_LOCS=LOCS.filter(l=>l.id!=='warehouse').map(l=>l.id);   // everything that adds up to LS EOD SOH
 
 /* ---------- helpers ---------- */
@@ -322,7 +323,8 @@ const isStreamer=()=>!!(window.CPAuth&&CPAuth.user&&CPAuth.user.role==='streamer
 const canPlanGame=()=>!isStreamer();
 const shiftOpenIn=loc=>{ const sh=openShiftAt(loc); return !!(sh&&sh.status==='open'); };
 let showPastGames=false;
-const canLoc=id=>!window.CPAuth||CPAuth.can(id,'inventory');
+/* a location the shared access table does not know yet (older calipoke-auth.js): LS Backend and above */
+const canLoc=id=>!window.CPAuth||(((CPAuth.ACCESS||{}).inventory||{})[id]?CPAuth.can(id,'inventory'):['admin','wh_backend','ls_backend'].includes((CPAuth.user||{}).role));
 function alog(action,d){ try{ if(window.CPAuth) CPAuth.log(action,d); }catch(e){} }
 
 /* ============================================================
@@ -629,14 +631,21 @@ let curGame=null, gmBackTo='menu', gmQ='', gmTab='sell';
 function bundleReserved(s){ const r={}; const bl=s.bundles||{}; for(const bid in bl){ const b=bl[bid]; const c=+b.count||0; for(const k in (b.items||{})) r[k]=(r[k]||0)+c*(+b.items[k]||1); } return r; }
 function freeOf(s,k){ return (+((s.items||{})[k])||0)-(bundleReserved(s)[k]||0); }
 const gameStatus=s=>s.status==='open'?'planning':(s.status||'planning');
-const readyInStockroom=k=>balAt('stockroom',k)-(reservedAt('stockroom')[k]||0);
+const PLAN_LOCS=['stockroom','gamearea'];                       // places where a game can be planned and built
+const gameHome=s=>(s&&s.home&&LOC_BY_ID[s.home])?s.home:'stockroom';   // the place a game takes its products from and returns them to
+const gHome=()=>gameHome(SUBS[curGame]);
+const readyInStockroom=k=>{ const h=gHome(); return balAt(h,k)-(reservedAt(h)[k]||0); };
 function whereIs(k,exclLoc){ const w=[]; LOCS.forEach(l=>{ if(l.id===exclLoc) return; const b=balAt(l.id,k); if(b) w.push(locName(l.id)+' '+fmt(b)); }); Object.keys(SUBS).forEach(id=>{ const s=SUBS[id]; if(s.status!=='closed'&&s.items&&+s.items[fbKey(k)]) w.push('🧺 '+s.name+' '+fmt(+s.items[fbKey(k)])); }); return w; }
-function openPlanGame(){ if(!canPlanGame()){ toast('Games are planned in the Stockroom — ask the Stockroom team','warn'); return; }
-  const d=modal('<h2>🎲 Plan a game</h2><p class="sub" style="font-size:13px">The game is built in the <b>Stockroom</b> — only products that are ready there can go in. When the list is done, mark it ready and move it whole to the streamer\'s room.</p>'+
+function openPlanGame(){ if(!canPlanGame()){ toast('Games are planned in the Stockroom or the Streaming Game Area — ask the team there','warn'); return; }
+  const places=PLAN_LOCS.filter(canLoc); if(!places.length){ toast('Your role has no access to the places where games are planned','warn'); return; }
+  let at=(screen==='loc'&&places.includes(curLoc))?curLoc:places[0];
+  const d=modal('<h2>🎲 Plan a game</h2><p class="sub" style="font-size:13px">The game is built from the products that are ready in the place you choose. When the list is done, mark it ready and move it whole to the streamer\'s room.</p>'+
+    '<div class="fld"><label>Build it in</label><div class="chipsel" id="pgAt"></div></div>'+
     '<div class="fld"><label>Game name</label><input id="pgName" class="tinput" style="font-family:var(--body)" placeholder="e.g. Koi Bag Game 11/12 · TT1"></div>'+
     '<div class="row" style="margin-top:16px"><button class="btn primary lg" id="pgGo" style="flex:1">Create & build the list</button><button class="btn ghost" id="pgX">Cancel</button></div>');
+  const drawAt=()=>{ d.querySelector('#pgAt').innerHTML=places.map(x=>'<button class="chip'+(x===at?' on':'')+'" data-at="'+x+'">'+LOC_BY_ID[x].icon+' '+esc(locName(x))+'</button>').join(''); d.querySelectorAll('[data-at]').forEach(b=>b.onclick=()=>{ at=b.dataset.at; drawAt(); }); }; drawAt();
   d.querySelector('#pgX').onclick=closeModal; const inp=d.querySelector('#pgName'); setTimeout(()=>inp.focus(),50);
-  const go=async()=>{ const n=inp.value.trim(); if(n.length<2){ toast('Enter a name','warn'); return; } const ref=R.child('subs').push(); await ref.set({name:n,kind:'game',at:'stockroom',status:'planning',createdAt:Date.now(),createdBy:MY_NAME,items:{}}); closeModal(); toast('Game "'+n+'" created in the Stockroom','ok'); openGame(ref.key,screen==='game'?gmBackTo:screen); };
+  const go=async()=>{ const n=inp.value.trim(); if(n.length<2){ toast('Enter a name','warn'); return; } const ref=R.child('subs').push(); await ref.set({name:n,kind:'game',at:at,home:at,status:'planning',createdAt:Date.now(),createdBy:MY_NAME,items:{}}); closeModal(); toast('Game "'+n+'" created in '+locName(at),'ok'); openGame(ref.key,screen==='game'?gmBackTo:screen); };
   d.querySelector('#pgGo').onclick=go; inp.addEventListener('keydown',e=>{ if(e.key==='Enter') go(); });
 }
 function openGame(id,back){ curGame=id; gmBackTo=back&&back!=='game'?back:'menu'; gmQ=''; gmTab='sell'; show('game'); renderGame(); }
@@ -657,16 +666,17 @@ function renderGame(){
   if((st==='ready'||st==='ended'||st==='planning')&&inStream&&unitsOf(items)) acts.push(shiftOpenIn(s.at)?'<button class="btn primary" id="gmStart">▶ '+(st==='ended'?'Continue game':'Start game')+'</button>':'<span class="badge warn">start the shift to run this game</span>');
   if(live) acts.push('<button class="btn warn" id="gmEnd">■ End game</button>');
   if(st!=='closed'&&!strm) acts.push('<select class="sel" id="gmMove" style="min-width:150px"><option value="">Move whole game to…</option>'+LOCS.filter(l=>l.id!==s.at&&l.id!=='warehouse'&&l.kind!=='show').map(l=>'<option value="'+l.id+'">'+l.icon+' '+esc(l.name)+'</option>').join('')+'</select>');
-  if(st!=='closed'&&s.at==='stockroom'&&!live&&!strm) acts.push('<button class="btn sm warn" id="gmRet">↩ Return all to Stockroom</button>');
+  if(st!=='closed'&&s.at===gameHome(s)&&!live&&!strm) acts.push('<button class="btn sm warn" id="gmRet">↩ Return all to '+esc(locName(gameHome(s)))+'</button>');
   if(st!=='closed'&&!live&&unitsOf(items)&&!strm) acts.push('<button class="btn sm" id="gmCount" title="Count what is physically in the game and compare with the system">🔢 Count leftovers</button>');
   if(isAdmin()&&st!=='closed') acts.push('<button class="btn sm ghost" id="gmAdmAdd" title="Admin: put any product into the game as a correction">✎ Add (admin)</button>');
   acts.push('<button class="btn ghost sm" id="gmHist">🕘</button>');
   const roomShift=inStream?openShiftAt(s.at):null; if(roomShift&&roomShift.status==='open') acts.push('<button class="btn danger" id="gmEndShift" title="End '+shiftLabel(roomShift)+' in '+esc(locName(s.at))+'">■ End shift</button>');
   $('#gmActs').innerHTML=acts.join('');
   const keys=Object.keys(items).filter(k=>+items[k]||start[k]||sold[k]).sort((a,b)=>itemInfo(a).name.localeCompare(itemInfo(b).name)); const q=norm(gmQ);
-  const hint=st==='planning'?'Build the list from the Stockroom: scan or type a product. Open boxes into packs, group products into bundles.':st==='ready'?(s.editing?'Editing the list.':'List is ready. Move the game to the streamer\'s room — the streamer presses Start game there.'):live?'Selling: scan or type a product or a bundle. Leftovers stay in the game.':st==='ended'?'Game ended — leftovers are fixed in the game. Count them if needed, then move the game whole to another room or back to the Stockroom (Return all puts leftovers on the shelf).':'Closed — kept in history.';
+  const HN=esc(locName(gameHome(s)));
+  const hint=st==='planning'?'Build the list from '+HN+': scan or type a product. Open boxes into packs, group products into bundles.':st==='ready'?(s.editing?'Editing the list.':'List is ready. Move the game to the streamer\'s room — the streamer presses Start game there.'):live?'Selling: scan or type a product or a bundle. Leftovers stay in the game.':st==='ended'?'Game ended — leftovers are fixed in the game. Count them if needed, then move the game whole to another room or back to '+HN+' (Return all puts leftovers on the shelf).':'Closed — kept in history.';
   const kv='<div class="kvs">'+(start&&unitsOf(start)?'<div class="kv"><div class="n">'+fmt(unitsOf(start))+'</div><div class="l">start</div></div><div class="kv ok"><div class="n">'+fmt(unitsOf(sold))+'</div><div class="l">sold</div></div>':'')+'<div class="kv info"><div class="n">'+fmt(unitsOf(items))+'</div><div class="l">'+(start&&unitsOf(start)?'left':'units in the game')+'</div></div><div class="kv"><div class="n">'+Object.keys(bundles).length+'</div><div class="l">bundles</div></div><div class="kv"><div class="n" style="font-size:16px">'+esc(locName(s.at))+'</div><div class="l">now in</div></div></div>';
-  const scan=(edit||live)?'<div class="scanwrap"><div class="scanhead"><span class="mode'+(live?'':' label')+'">'+(live?'💲 Selling':'＋ Adding from Stockroom')+'</span><span class="mini">'+esc(hint)+'</span></div><div class="scanrow" style="position:relative"><input id="gmScan" autocomplete="off" placeholder="'+(live?'Scan or type a product or bundle…':'Scan or type a product…')+'"><button class="btn" id="gmCam">📷</button>'+(edit?'<button class="btn" id="gmNewBundle">🎁 Create bundle</button>':'')+'<div class="sugg hide" id="gmSugg"></div></div></div>':'<div class="note info" style="margin-bottom:12px">'+esc(hint)+'</div>';
+  const scan=(edit||live)?'<div class="scanwrap"><div class="scanhead"><span class="mode'+(live?'':' label')+'">'+(live?'💲 Selling':'＋ Adding from '+HN)+'</span><span class="mini">'+esc(hint)+'</span></div><div class="scanrow" style="position:relative"><input id="gmScan" autocomplete="off" placeholder="'+(live?'Scan or type a product or bundle…':'Scan or type a product…')+'"><button class="btn" id="gmCam">📷</button>'+(edit?'<button class="btn" id="gmNewBundle">🎁 Create bundle</button>':'')+'<div class="sugg hide" id="gmSugg"></div></div></div>':'<div class="note info" style="margin-bottom:12px">'+esc(hint)+'</div>';
   const resv=bundleReserved(s); const all=gmTab==='all';
   const rows=keys.filter(k=>!q||norm(itemInfo(k).name).includes(q)).filter(k=>all||(+items[k]-(resv[k]||0))!==0||!(resv[k])).map(k=>{ const it=itemInfo(k); const n=all?(+items[k]||0):(+items[k]||0)-(resv[k]||0); const isBox=false;
     const qty=all&&start&&unitsOf(start)?'<div class="q3"><span>start<b>'+fmt(start[k]||0)+'</b></span><span>sold<b style="color:var(--ok)">'+fmt(sold[k]||0)+'</b></span><span>left<b'+(n<0?' style="color:var(--err)"':'')+'>'+fmt(n)+'</b></span></div>':'<div class="q'+(n<0?' neg':'')+'">'+fmt(n)+'<small>'+(all?'total':(resv[k]?'free · '+fmt(resv[k])+' in bundles':'units'))+'</small></div>';
@@ -710,18 +720,18 @@ function renderGame(){
   setTimeout(()=>{ if(document.activeElement!==$('#gmQ')) sc.focus(); },60);
 }
 /* ---- add a product from the Stockroom (availability gate) ---- */
-function askAdd(k){ const it=itemInfo(k); const ready=readyInStockroom(k); const have=balAt('stockroom',k); const res=(reservedAt('stockroom')[k]||0);
-  if(ready<=0){ const w=whereIs(k,'stockroom'); beep('err'); modal('<h2 style="color:var(--err)">Not available in the Stockroom</h2><div class="pcard">'+img(it.image)+'<div><div class="cn">'+nm(it)+'</div><div class="cv">'+esc(varOf(it.variation))+'</div></div></div>'+
-      '<p class="sub" style="font-size:14px">'+(have>0?'Stockroom has '+fmt(have)+' but <b style="color:var(--warn)">'+fmt(res)+' are reserved</b> by an approved Transfer Request.':(w.length?'It is not in the Stockroom. Found in: <b>'+esc(w.join(' · '))+'</b>.':'It is not in any location.'))+'<br><br>'+(balAt('warehouse',k)?'Warehouse has <b>'+fmt(balAt('warehouse',k))+'</b> — ':'')+'<b>request a transfer to the Stockroom first</b>, then add it to the game.</p>'+
+function askAdd(k){ const H=gHome(), HN=esc(locName(H)); const it=itemInfo(k); const ready=readyInStockroom(k); const have=balAt(H,k); const res=(reservedAt(H)[k]||0);
+  if(ready<=0){ const w=whereIs(k,H); beep('err'); modal('<h2 style="color:var(--err)">Not available in '+HN+'</h2><div class="pcard">'+img(it.image)+'<div><div class="cn">'+nm(it)+'</div><div class="cv">'+esc(varOf(it.variation))+'</div></div></div>'+
+      '<p class="sub" style="font-size:14px">'+(have>0?''+HN+' has '+fmt(have)+' but <b style="color:var(--warn)">'+fmt(res)+' are reserved</b> by an approved Transfer Request.':(w.length?'It is not in '+HN+'. Found in: <b>'+esc(w.join(' · '))+'</b>.':'It is not in any location.'))+'<br><br>'+(balAt('warehouse',k)?'Warehouse has <b>'+fmt(balAt('warehouse',k))+'</b> — ':'')+'<b>request a transfer to '+HN+' first</b>, then add it to the game.</p>'+
       '<div class="row" style="margin-top:14px"><a class="btn" href="'+TRANSFER_APP_URL+'" target="_blank">↗ Transfer Request</a>'+(isAdmin()?'<button class="btn warn" id="naAdm">✎ Add anyway (admin correction)</button>':'')+'<button class="btn ghost" onclick="closeModal()">Close</button></div>'); const na=$('#naAdm'); if(na) na.onclick=()=>{ closeModal(); openAdjust(k,'sub:'+curGame); }; return; }
-  const d=modal('<h2>Add to the game</h2><div class="pcard">'+img(it.image)+'<div><div class="cn">'+nm(it)+'</div><div class="cv">'+esc(varOf(it.variation))+'</div><div class="cv">Ready in the Stockroom: <b style="color:var(--ok)">'+fmt(ready)+'</b>'+(res?' · reserved '+fmt(res):'')+'</div></div></div>'+
+  const d=modal('<h2>Add to the game</h2><div class="pcard">'+img(it.image)+'<div><div class="cn">'+nm(it)+'</div><div class="cv">'+esc(varOf(it.variation))+'</div><div class="cv">Ready in '+HN+': <b style="color:var(--ok)">'+fmt(ready)+'</b>'+(res?' · reserved '+fmt(res):'')+'</div></div></div>'+
     '<input id="gaQ" class="bigqty" type="number" min="1" max="'+ready+'" value="1"><div class="row"><button class="btn sm" data-q="6">+6</button><button class="btn sm" data-q="12">+12</button><button class="btn sm" data-q="24">+24</button><button class="btn sm ghost" id="gaAll">All ('+fmt(ready)+')</button></div><button class="btn primary lg" id="gaOk" style="width:100%;margin-top:12px">＋ Add</button>');
   const inp=d.querySelector('#gaQ'); d.querySelectorAll('[data-q]').forEach(b=>b.onclick=()=>{ inp.value=int(inp.value)+(+b.dataset.q); }); d.querySelector('#gaAll').onclick=()=>{ inp.value=ready; };
-  const ok=async()=>{ const n=int(inp.value); if(n<1) return; if(n>ready){ toast('Only '+fmt(ready)+' ready in the Stockroom','err'); return; } d.querySelector('#gaOk').disabled=true; await postEvent({item:k,qty:n,from:'stockroom',to:'sub:'+curGame,kind:'sub',note:'game · '+SUBS[curGame].name}); beep('ok'); closeModal(); toast('＋ '+n+' × '+it.name,'ok',1800); };
+  const ok=async()=>{ const n=int(inp.value); if(n<1) return; if(n>ready){ toast('Only '+fmt(ready)+' ready in '+HN+'','err'); return; } d.querySelector('#gaOk').disabled=true; await postEvent({item:k,qty:n,from:H,to:'sub:'+curGame,kind:'sub',note:'game · '+SUBS[curGame].name}); beep('ok'); closeModal(); toast('＋ '+n+' × '+it.name,'ok',1800); };
   d.querySelector('#gaOk').onclick=ok; inp.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); ok(); } }); setTimeout(()=>{ inp.focus(); inp.select(); },50); }
-function askRemove(k){ const s=SUBS[curGame]; const it=itemInfo(k); const have=freeOf(s,k); if(have<=0){ toast('Everything is inside bundles — edit the bundle first','warn'); return; }
-  const d=modal('<h2>Return to the Stockroom</h2><div class="pcard">'+img(it.image)+'<div><div class="cn">'+nm(it)+'</div><div class="cv">In the game: <b style="color:var(--ink)">'+fmt(have)+'</b></div></div></div><input id="grQ" class="bigqty" type="number" min="1" max="'+have+'" value="'+have+'"><button class="btn primary lg" id="grOk" style="width:100%;margin-top:12px">↩ Return</button>');
-  const inp=d.querySelector('#grQ'); const ok=async()=>{ const n=Math.min(have,int(inp.value)); if(n<1) return; await postEvent({item:k,qty:n,from:'sub:'+curGame,to:'stockroom',kind:'sub',note:'removed from game · '+s.name}); closeModal(); toast('↩ '+n+' × '+it.name+' back to the Stockroom','ok',1800); };
+function askRemove(k){ const H=gHome(), HN=esc(locName(H)); const s=SUBS[curGame]; const it=itemInfo(k); const have=freeOf(s,k); if(have<=0){ toast('Everything is inside bundles — edit the bundle first','warn'); return; }
+  const d=modal('<h2>Return to '+HN+'</h2><div class="pcard">'+img(it.image)+'<div><div class="cn">'+nm(it)+'</div><div class="cv">In the game: <b style="color:var(--ink)">'+fmt(have)+'</b></div></div></div><input id="grQ" class="bigqty" type="number" min="1" max="'+have+'" value="'+have+'"><button class="btn primary lg" id="grOk" style="width:100%;margin-top:12px">↩ Return</button>');
+  const inp=d.querySelector('#grQ'); const ok=async()=>{ const n=Math.min(have,int(inp.value)); if(n<1) return; await postEvent({item:k,qty:n,from:'sub:'+curGame,to:H,kind:'sub',note:'removed from game · '+s.name}); closeModal(); toast('↩ '+n+' × '+it.name+' back to '+HN+'','ok',1800); };
   d.querySelector('#grOk').onclick=ok; inp.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); ok(); } }); setTimeout(()=>{ inp.focus(); inp.select(); },50); }
 /* ---- open box → packs ---- */
 /* "Ascended Heroes BB" → "Ascended Heroes Pack" */
@@ -943,7 +953,7 @@ function shiftsDayHTML(loc,day){ const list=shiftsOf(loc,day); const anyOpen=lis
 /* ============================================================
    IMPORT — paste stock per location from a spreadsheet (admin)
    ============================================================ */
-const IM_ORDER=['stockroom','tiktok1','ebay','whatnot','singleslab','cardshow'];
+const IM_ORDER=['stockroom','gamearea','tiktok1','ebay','whatnot','singleslab','cardshow'];
 const IM_FIELDS=['item'].concat(IM_ORDER);
 function buildImportFields(){ const host=$('#imFields'); if(!host||host.children.length) return;
   host.innerHTML=IM_FIELDS.map(f=>'<div class="imcol"><label>'+(f==='item'?'Item name / barcode':esc(locName(f)))+'</label><textarea data-imf="'+f+'" class="tinput" spellcheck="false" placeholder="'+(f==='item'?'Ascended Heroes BB\nKoi Box\n…':'12\n3\n…')+'"></textarea></div>').join('');
@@ -990,7 +1000,7 @@ function renderLoc(){
   $('#lcCount').classList.toggle('hide',curLoc==='warehouse'); { const cs=CSESS[fbKey(curLoc)], b=$('#lcCount'); b.textContent=cs?'🔢 Continue count · since '+hhmm(cs.startedAt):'🔢 Count'; b.classList.toggle('warn',!!cs); b.title=cs?'A count started by '+(cs.by||'someone')+' is in progress':''; } $('#lcReq').classList.toggle('hide',curLoc==='warehouse'); $('#lcReq').onclick=()=>openTransferRequest(curLoc); $('#lcNewSub').classList.toggle('hide',curLoc==='warehouse'); $('#lcGame').classList.toggle('hide',l.kind==='warehouse'||l.kind==='show'||!canPlanGame()); if(isStreamer()){ $('#lcCount').classList.add('hide'); $('#lcNewSub').classList.add('hide'); }
   const strm=isStreamer(); ['days','log'].forEach(t=>$('#lcTabs [data-t="'+t+'"]').classList.toggle('hide',strm)); if(strm&&(lcTab==='days'||lcTab==='log')) lcTab=l.kind==='stream'?'shift':'stock';
   $('#lcTabs [data-t="shift"]').classList.toggle('hide',l.kind!=='stream'); if(lcTab==='shift'&&l.kind!=='stream') lcTab='stock';
-  $('#lcTabs [data-t="subs"]').textContent=l.kind==='stream'?'🎲 Games':l.kind==='show'?'🚐 Shows':'🧺 Sub-locations';
+  $('#lcTabs [data-t="subs"]').textContent=(l.kind==='stream'||l.id==='gamearea')?'🎲 Games':l.kind==='show'?'🚐 Shows':'🧺 Sub-locations';
   $$('#lcTabs button').forEach(b=>b.classList.toggle('on',b.dataset.t===lcTab));
   /* drop targets: other locations + sub-locations here */
   $('#lcDrop').innerHTML=''; $('#lcDrop').classList.add('hide');
@@ -1015,7 +1025,7 @@ function renderStock(body){
 function elsewhereHTML(q){ const rows=searchProducts(q,8); const parts=[]; rows.forEach(v=>{ const where=[]; LOCS.forEach(l=>{ const b=balAt(l.id,v.ikey); if(b) where.push(locName(l.id)+' '+fmt(b)); }); subsAt(null); Object.keys(SUBS).forEach(id=>{ const s=SUBS[id]; if(s.status!=='closed'&&s.items&&+s.items[v.ikey]) where.push('🧺 '+s.name+' '+fmt(+s.items[v.ikey])); }); if(where.length) parts.push('<b>'+nm(v)+(varOf(v.variation)?' · '+esc(v.variation):'')+'</b>: '+esc(where.join(' · '))); }); return parts.length?'Also in: '+parts.join('<br>')+(curLoc==='stockroom'?'<br><span style="color:var(--warn)">Not here — request a transfer first.</span>':''):'Not in any location.'; }
 /* everything can be opened except products whose name ends with "Pack"; the pack product is set when a box is opened the first time */
 const isBoxLike=k=>{ const it=itemInfo(k); if(BOXES[fbKey(k)]) return true; if(it.tmp) return false; return !/\bpacks?\s*$/i.test(String(it.name).trim()); };
-function rowHTML(k,qty,reserved,loc){ const it=itemInfo(k); const at=loc||curLoc; const ro=at==='warehouse'||isStreamer(); const ready=qty-(reserved||0); const canOpen=!ro&&isBoxLike(k)&&(isSub(at)||['stockroom','tiktok1','ebay','whatnot'].includes(at));
+function rowHTML(k,qty,reserved,loc){ const it=itemInfo(k); const at=loc||curLoc; const ro=at==='warehouse'||isStreamer(); const ready=qty-(reserved||0); const canOpen=!ro&&isBoxLike(k)&&(isSub(at)||['stockroom','gamearea','tiktok1','ebay','whatnot'].includes(at));
   return '<div class="irow" data-k="'+esc(k)+'" data-loc="'+esc(at)+'">'+img(it.image)+'<div><div class="nm">'+nm(it)+'</div><div class="vr">'+esc(varOf(it.variation))+(it.barcode?' · <span class="mono">'+esc(barcodesOf(it.barcode)[0]||'')+'</span>':'')+(reserved?' · <span style="color:var(--warn)">reserved '+fmt(reserved)+' · ready '+fmt(ready)+'</span>':'')+'</div></div>'+
     '<div class="q'+(qty<0?' neg':(reserved?' res':''))+'">'+fmt(qty)+'<small>units</small></div><div class="acts">'+(ro?'':'<span class="grip" title="Drag to another location">⠿</span>'+(canOpen?(qty>0?'<button class="btn sm warn" data-open="'+esc(k)+'" title="Open box → packs">📦 Open</button>':'<button class="btn sm ghost" disabled title="Nothing to open: the stock here is '+fmt(qty)+'. Enter the real quantity first (Count or ✎).">📦 Open</button>'):'')+'<button class="btn sm" data-tr="'+esc(k)+'">⇄</button>'+(isAdmin()?'<button class="btn sm ghost" data-adj="'+esc(k)+'" title="Correct">✎</button>':''))+'</div></div>'; }
 function wireRows(sel,loc){ $$(sel+' [data-open]').forEach(b=>b.onclick=()=>openBoxAt(loc,b.dataset.open)); $$(sel+' [data-tr]').forEach(b=>b.onclick=()=>openTransfer(b.dataset.tr,loc)); $$(sel+' [data-adj]').forEach(b=>b.onclick=()=>openAdjust(b.dataset.adj,loc)); }
@@ -1053,7 +1063,7 @@ function subHTML(s){ const items=s.items||{}; const u=unitsOf(items); const sold
   return '<div class="subcard"><div class="sh"><span class="sn">'+(g?'🎲 ':'🧺 ')+esc(s.name)+'</span>'+(g?'<span class="gstat '+st+'">'+st+'</span>':'<span class="badge sub">'+esc(s.kind)+'</span>')+'<span class="pill">now <b>'+fmt(u)+'</b></span>'+(start?'<span class="pill">start <b>'+fmt(start)+'</b> · sold <b>'+fmt(sold)+'</b></span>':'')+'<div class="spacer"></div>'+
     (g?'<button class="btn sm'+(st==='live'?' primary':'')+'" data-gopen="'+s.id+'">'+(st==='live'?'💲 Sell':'🎲 Open game')+'</button>':'')+(g&&(st==='ready'||st==='ended')&&(LOC_BY_ID[s.at]||{}).kind==='stream'?'<button class="btn sm primary" data-gstart="'+s.id+'">▶ Start game</button>':'')+
     '<select class="sel" data-submove="'+s.id+'" style="min-width:150px"><option value="">Move whole sub to…</option>'+LOCS.filter(l=>l.id!==s.at&&l.id!=='warehouse'&&(l.kind!=='show'||s.kind==='show')).map(l=>'<option value="'+l.id+'">'+l.icon+' '+esc(l.name)+'</option>').join('')+'</select>'+
-    (s.at==='stockroom'?'<button class="btn sm warn" data-subret="'+s.id+'">↩ Return all to Stockroom</button>':'')+'<button class="btn sm ghost" data-subhist="'+s.id+'">🕘</button></div><div class="list" data-sublist="'+s.id+'"></div></div>'; }
+    (s.at===gameHome(s)?'<button class="btn sm warn" data-subret="'+s.id+'">↩ Return all to '+esc(locName(gameHome(s)))+'</button>':'')+'<button class="btn sm ghost" data-subhist="'+s.id+'">🕘</button></div><div class="list" data-sublist="'+s.id+'"></div></div>'; }
 function openSubHistory(id){ const s=SUBS[id]; const evs=LEDGER.filter(e=>e.from==='sub:'+id||e.to==='sub:'+id); const log=Object.values(s.log||{});
   modal('<h2>🧺 '+esc(s.name)+'</h2><p class="sub" style="font-size:13px">'+esc(s.kind)+' · created '+esc(fmtTime(s.createdAt))+' by '+esc(s.createdBy||'')+(s.closedAt?' · closed '+esc(fmtTime(s.closedAt)):'')+' · now in '+esc(locName(s.at))+'</p>'+
     (log.length?'<div style="margin-top:8px">'+log.map(x=>'<div class="logrow"><span class="lt">'+esc(fmtTime(x.at))+'</span><span>'+esc(x.text)+'</span><span class="mini">'+esc(x.by||'')+'</span></div>').join('')+'</div>':'')+
