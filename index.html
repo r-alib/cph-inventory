@@ -238,7 +238,7 @@ td.editable{cursor:pointer} td.editable:hover{background:#1a2338;box-shadow:inse
      packstation/transfers           → ready transfers become ledger events
    Day boundaries: calendar days (local time). Streamer rooms: day = day shift + night shift (build 3).
    ============================================================ */
-const BUILD='2026-11-17d · a count is applied once';
+const BUILD='2026-11-18a · finishing a count: update the stock / send for review';
 const INV_CONFIG={apiKey:"AIzaSyAsTYwU0qABmXKuYSpyendwHw3djJc-Bqo",authDomain:"calipoke-inventory.firebaseapp.com",databaseURL:"https://calipoke-inventory-default-rtdb.firebaseio.com",projectId:"calipoke-inventory",storageBucket:"calipoke-inventory.firebasestorage.app",messagingSenderId:"156640764541",appId:"1:156640764541:web:833f96e4b0849b53454714"};
 const STATION_CONFIG={apiKey:"AIzaSyB2I2sR9czF6F29OZMyEZubmwQGP7nWFlc",authDomain:"calipoke-packstation.firebaseapp.com",databaseURL:"https://calipoke-packstation-default-rtdb.firebaseio.com",projectId:"calipoke-packstation",storageBucket:"calipoke-packstation.firebasestorage.app",messagingSenderId:"125288117157",appId:"1:125288117157:web:461b4d553e100c07b9ae4c"};
 const ROOT='inv', STATION_PATH='packstation';
@@ -299,6 +299,7 @@ let BAL={};                   // loc -> ikey -> qty
 let SUBS={};                  // subId -> sub
 let LEDGER=[];                // sorted by ts asc
 let DISC={};                  // id -> discrepancy
+let DISC_BUSY=false;            // a whole count is being applied from Discrepancies
 let COUNTS={};                // loc -> id -> count
 let BOXES={};                 // fbKey(boxIkey) -> {pack, packs, alts}
 let SHIFTS={};                // shiftId -> shift (streamer rooms)
@@ -579,8 +580,10 @@ function openCount(loc,opts){ opts=opts||{};
         :'<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:20px">'+(keys.length?(flt==='todo'?'Everything is counted — press Finish count.':'Nothing in this filter.'):'The system expects nothing here — scan what you find.')+'</td></tr>')+'</tbody></table></div>'+
       '<div class="row" style="margin-top:14px">'+(isAdmin()?'<span class="mini">admin:</span><button class="btn sm ghost" id="ctAllMatch" title="Mark every line that is not counted yet as matching">✓ All match</button><button class="btn sm ghost" id="ctNothing" title="Mark every line that is not counted yet as 0">∅ Nothing here</button>':'')+
       '<button class="btn sm ghost" id="ctDiscard" title="Throw this count away">✕ Discard count</button><div class="spacer"></div><button class="btn ghost" id="ctX" title="The count is saved — open Count again to continue">Close — continue later</button>'+
-      (isAdmin()&&!opts.noApply?'<button class="btn warn" id="ctApply" '+(counted?'':'disabled')+'>✎ Finish &amp; apply corrections</button>':'')+
-      '<button class="btn primary" id="ctSave" '+(counted?'':'disabled')+'>■ Finish count</button></div>'+
+      (isAdmin()&&!opts.noApply
+        ?'<button class="btn" id="ctSave" '+(counted?'':'disabled')+' title="The stock is NOT changed. The differences go to Discrepancies and wait there until an admin applies them.">Finish — review later</button>'+
+         '<button class="btn primary" id="ctApply" '+(counted?'':'disabled')+' title="The counted numbers become the stock of this location right away.">✔ Finish &amp; update the stock</button>'
+        :'<button class="btn primary" id="ctSave" '+(counted?'':'disabled')+' title="The differences are sent to an admin, who applies them in Discrepancies.">■ Finish count</button>')+'</div>'+
       '<p class="mini" id="ctFoot" style="margin-top:8px;color:var(--'+(left?'warn':'ok')+')">'+footHTML()+'</p>',true);
     const wireChips=()=>d.querySelectorAll('[data-flt]').forEach(b=>b.onclick=()=>{ flt=b.dataset.flt; focusTo=null; draw(); });
     const wireActs=root=>{
@@ -631,9 +634,9 @@ function openCount(loc,opts){ opts=opts||{};
         else await R.child('discrepancies').push({at:Date.now(),loc,item:k,name:itemInfo(k).name,exp:l.exp,cnt:l.cnt,by:MY_NAME,status:'open',countId:id,purpose:opts.purpose||'count',shift:opts.shift||null,tmp:!!l.tmp}); }
       await R.child('countSessions/'+sk).remove(); delete CSESS[sk];
       alog('count',{text:(opts.title||'count')+' · '+keys.length+' lines · '+counted+' counted · '+left+' not counted · '+diffs+' differ'+(apply?' · applied':''),loc:loc,ref:id}); closeModal(); beep(diffs?'warn':'ok');
-      toast((apply?'Count applied · '+diffs+' line(s) corrected':(diffs?diffs+' discrepanc'+(diffs===1?'y':'ies')+' recorded for review':'Count finished — everything counted matches'))+(left?' · '+left+' not counted':''),(diffs&&!apply)||left?'warn':'ok',4500);
+      toast((apply?'Count applied · '+diffs+' line(s) corrected':(diffs?'Count saved · the stock is NOT changed yet — '+diffs+' difference(s) wait in Discrepancies':'Count finished — everything counted matches'))+(left?' · '+left+' not counted':''),(diffs&&!apply)||left?'warn':'ok',(diffs&&!apply)?9000:4500);
       renderCurrent(); if(opts.onDone) opts.onDone({id,diffs,applied:!!apply,lines:out,notCounted:left}); };
-    const ask=apply=>{ const msg=(left?left+' line(s) are NOT counted — they stay as they are and are marked “not counted” in the result.\n\n':'')+(apply?'Finish the count and apply '+diffs+' correction(s) to the stock now?'+(keys.some(k=>lines[k].tmp)?'\nTemporary items are not applied — they go to Discrepancies for matching.':''):'Finish the count?'+(diffs?'\n'+diffs+' discrepanc'+(diffs===1?'y':'ies')+' will be recorded for review.':''));
+    const ask=apply=>{ const msg=(left?left+' line(s) are NOT counted — they stay as they are and are marked “not counted” in the result.\n\n':'')+(apply?'Finish the count and UPDATE THE STOCK now ('+diffs+' correction(s))?'+(keys.some(k=>lines[k].tmp)?'\nTemporary items are not applied — they go to Discrepancies for matching.':''):'Finish the count?'+(diffs?'\n\nThe stock will NOT change yet: '+diffs+' difference(s) go to Discrepancies and wait there until an admin applies them.'+(isAdmin()&&!opts.noApply?'\nTo change the stock right now use “Finish & update the stock” instead.':''):''));
       if(confirm(msg)) finish(apply); };
     d.querySelector('#ctSave').onclick=()=>ask(false); const ap=d.querySelector('#ctApply'); if(ap) ap.onclick=()=>ask(true);
     if(focusTo==='scan'||focusTo===null&&!counted) setTimeout(()=>sc.focus(),60); focusTo='scan';
@@ -1188,9 +1191,32 @@ async function refreshDSOH(force){ try{ DSOH=await loadDailySOH(force); DSOH_ERR
 function renderDisc(){
   $$('#dcTabs button').forEach(b=>b.classList.toggle('on',b.dataset.t===dcTab)); const body=$('#dcBody');
   if(dcTab==='open'){ const list=Object.keys(DISC).map(id=>Object.assign({id},DISC[id])).sort((a,b)=>(a.status==='open'?0:1)-(b.status==='open'?0:1)||(b.at||0)-(a.at||0)).slice(0,300);
-    body.innerHTML='<p class="mini">Lines where a physical count did not match the system and the employee confirmed the difference. Admin / Celina can apply the counted number (a correction is written to the journal) or dismiss the line.</p><div class="tscroll"><table><thead><tr><th>When</th><th>Location</th><th>Item</th><th class="num">System</th><th class="num">Counted</th><th class="num">Δ</th><th>By</th><th>Status</th><th></th></tr></thead><tbody>'+
+    /* open lines grouped by the count they came from — a whole count can be applied or dismissed at once */
+    const grp={}; Object.keys(DISC).forEach(id=>{ const x=DISC[id]; if(!x||x.status!=='open') return; const g=x.countId||('loc:'+x.loc); (grp[g]=grp[g]||{id:g,loc:x.loc,by:x.by,at:x.at,ids:[],tmp:0}).ids.push(id); if(x.tmp) grp[g].tmp++; if((x.at||0)<grp[g].at) grp[g].at=x.at; });
+    const groups=Object.values(grp).sort((a,b)=>(b.at||0)-(a.at||0));
+    const ghtml=groups.length?'<div class="card" style="margin:10px 0;padding:12px 14px"><div class="mini" style="margin-bottom:8px"><b>Counts waiting for review</b> — finished without updating the stock. “Apply all” makes the counted numbers the stock of the location.</div>'+
+      groups.map(g=>{ const c=(COUNTS[g.loc]||{})[g.id]; const dup=c&&Object.keys(COUNTS[g.loc]||{}).some(o=>o!==g.id&&COUNTS[g.loc][o].applied&&COUNTS[g.loc][o].startedAt&&COUNTS[g.loc][o].startedAt===c.startedAt);
+        return '<div class="row" style="gap:10px;margin:6px 0;align-items:center"><b>'+esc(locName(g.loc))+'</b><span class="mini">'+esc(fmtTime(g.at))+' · '+esc(g.by||'')+'</span><span class="badge err">'+g.ids.length+' open</span>'+(g.tmp?'<span class="badge warn">'+g.tmp+' temp</span>':'')+
+          (dup?'<span class="badge warn" title="The same count was already applied — applying these lines again would double the corrections">already applied — dismiss</span>':'')+'<div class="spacer"></div>'+
+          (isAdmin()?(dup?'':'<button class="btn sm primary" data-gfix="'+esc(g.id)+'">✓ Apply all ('+(g.ids.length-g.tmp)+')</button>')+'<button class="btn sm" data-gdis="'+esc(g.id)+'">✕ Dismiss all</button>':'')+'</div>'; }).join('')+'</div>':'';
+    body._groups=grp;
+    body.innerHTML=ghtml+'<p class="mini">Lines where a physical count did not match the system and the employee confirmed the difference. Admin / Celina can apply the counted number (a correction is written to the journal) or dismiss the line.</p><div class="tscroll"><table><thead><tr><th>When</th><th>Location</th><th>Item</th><th class="num">System</th><th class="num">Counted</th><th class="num">Δ</th><th>By</th><th>Status</th><th></th></tr></thead><tbody>'+
       (list.length?list.map(d=>'<tr class="'+(d.status==='open'?'bad':'')+'"><td class="mono">'+esc(fmtTime(d.at))+'</td><td>'+esc(locName(d.loc))+'</td><td class="name">'+(d.tmp?'<span class="badge warn">temp</span> ':'')+esc(d.name)+'</td><td class="num">'+fmt(d.exp)+'</td><td class="num">'+fmt(d.cnt)+'</td><td class="num d">'+((d.cnt-d.exp>0?'+':'')+(d.cnt-d.exp))+'</td><td>'+esc(d.by||'')+'</td><td>'+(d.status==='open'?'<span class="badge err">open</span>':'<span class="badge ok">'+esc(d.status)+'</span>'+(d.note?' <span class="mini">'+esc(d.note)+'</span>':''))+'</td><td>'+(d.status==='open'&&isAdmin()?(d.tmp?'<button class="btn sm warn" data-match="'+d.id+'">🔍 Match to product…</button> ':'<button class="btn sm warn" data-fix="'+d.id+'">✎ Apply counted</button> ')+'<button class="btn sm ghost" data-dismiss="'+d.id+'">Dismiss</button>':'')+'</td></tr>').join(''):'<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:24px">No discrepancies. 🎉</td></tr>')+'</tbody></table></div>';
-    $$('#dcBody [data-fix]').forEach(b=>b.onclick=async()=>{ const d=DISC[b.dataset.fix]; const now=balAt(d.loc,d.item); const diff=d.cnt-d.exp; if(!confirm('Apply the counted number for '+d.name+' in '+locName(d.loc)+'?\nSystem now '+fmt(now)+' → '+fmt(now+diff))) return; await postEvent({item:d.item,qty:Math.abs(diff),from:diff<0?d.loc:null,to:diff>0?d.loc:null,kind:'adjust',note:'discrepancy fixed · counted '+d.cnt+' vs '+d.exp}); await R.child('discrepancies/'+b.dataset.fix).update({status:'fixed',fixedAt:Date.now(),fixedBy:MY_NAME}); toast('Applied','ok'); });
+    if(DISC_BUSY) $$('#dcBody [data-gfix],#dcBody [data-gdis],#dcBody [data-fix]').forEach(x=>x.disabled=true);
+    $$('#dcBody [data-gfix]').forEach(b=>b.onclick=async()=>{ if(DISC_BUSY) return; const g=body._groups[b.dataset.gfix]; if(!g) return; const ids=g.ids.filter(id=>DISC[id]&&DISC[id].status==='open'&&!DISC[id].tmp);
+      if(!ids.length||!confirm('Apply the count of '+locName(g.loc)+' ('+fmtTime(g.at)+', '+(g.by||'')+')?\n\n'+ids.length+' product(s) get the counted number: each is corrected by the difference the count found.'+(g.tmp?'\n'+g.tmp+' temporary item(s) stay open — match them to a product one by one.':''))) return;
+      DISC_BUSY=true; $$('#dcBody button').forEach(x=>x.disabled=true); let n=0;
+      try{ for(const id of ids){ const d=DISC[id]; if(!d||d.status!=='open') continue; const diff=d.cnt-d.exp;
+          if(diff) await postEvent({key:'disc_'+fbKey(id),item:d.item,qty:Math.abs(diff),from:diff<0?d.loc:null,to:diff>0?d.loc:null,kind:'adjust',note:'count applied · '+locName(d.loc)+' · counted '+d.cnt+' vs '+d.exp});
+          await R.child('discrepancies/'+id).update({status:'fixed',fixedAt:Date.now(),fixedBy:MY_NAME}); n++; if(n%5===0) toast('Applying… '+n+' / '+ids.length,'ok',1500); }
+        if(g.id&&g.id.indexOf('loc:')!==0) await R.child('counts/'+g.loc+'/'+g.id).update({applied:true,appliedAt:Date.now(),appliedBy:MY_NAME});
+        alog('count',{text:'count applied from Discrepancies · '+n+' line(s)',loc:g.loc,ref:g.id}); toast('Applied · '+n+' product(s) in '+locName(g.loc)+' corrected','ok',5000);
+      }catch(e){ toast('Stopped: '+(e.message||e)+' — press Apply all again, nothing is applied twice','err',7000); }
+      DISC_BUSY=false; renderCurrent(); });
+    $$('#dcBody [data-gdis]').forEach(b=>b.onclick=async()=>{ if(DISC_BUSY) return; const g=body._groups[b.dataset.gdis]; if(!g) return; const ids=g.ids.filter(id=>DISC[id]&&DISC[id].status==='open');
+      const why=prompt('Dismiss '+ids.length+' line(s) of '+locName(g.loc)+' without changing the stock.\nWhy?',''); if(why===null) return;
+      DISC_BUSY=true; const up={}; ids.forEach(id=>{ up[id+'/status']='dismissed'; up[id+'/note']=why; up[id+'/fixedAt']=Date.now(); up[id+'/fixedBy']=MY_NAME; }); await R.child('discrepancies').update(up); DISC_BUSY=false; toast('Dismissed · '+ids.length+' line(s)','ok'); });
+    $$('#dcBody [data-fix]').forEach(b=>b.onclick=async()=>{ const d=DISC[b.dataset.fix]; const now=balAt(d.loc,d.item); const diff=d.cnt-d.exp; if(!confirm('Apply the counted number for '+d.name+' in '+locName(d.loc)+'?\nSystem now '+fmt(now)+' → '+fmt(now+diff))) return; await postEvent({key:'disc_'+fbKey(b.dataset.fix),item:d.item,qty:Math.abs(diff),from:diff<0?d.loc:null,to:diff>0?d.loc:null,kind:'adjust',note:'discrepancy fixed · counted '+d.cnt+' vs '+d.exp}); await R.child('discrepancies/'+b.dataset.fix).update({status:'fixed',fixedAt:Date.now(),fixedBy:MY_NAME}); toast('Applied','ok'); });
     $$('#dcBody [data-match]').forEach(b=>b.onclick=()=>{ const d=DISC[b.dataset.match]; pickProduct('Match "'+d.name.replace(/^TEMP: /,'')+'" to a product',async v=>{ const now=balAt(d.loc,v.ikey); if(!confirm(d.name+' → '+v.name+'\nAdd '+fmt(d.cnt)+' to '+locName(d.loc)+' (system now '+fmt(now)+')?')) return; await postEvent({item:v.ikey,qty:d.cnt,from:null,to:d.loc,kind:'adjust',note:'temporary item matched: '+d.name}); await R.child('discrepancies/'+b.dataset.match).update({status:'fixed',fixedAt:Date.now(),fixedBy:MY_NAME,note:'matched to '+v.name,matched:v.ikey}); toast('Matched and applied','ok'); },'The employee counted '+fmt(d.cnt)+' of something that is not in the catalog. Pick the real product; the counted quantity is added to '+locName(d.loc)+'.'); });
     $$('#dcBody [data-dismiss]').forEach(b=>b.onclick=async()=>{ const why=prompt('Why is this not a real discrepancy?',''); if(why===null) return; await R.child('discrepancies/'+b.dataset.dismiss).update({status:'dismissed',note:why,fixedAt:Date.now(),fixedBy:MY_NAME}); });
     return; }
