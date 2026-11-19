@@ -170,7 +170,7 @@ td.editable{cursor:pointer} td.editable:hover{background:#1a2338;box-shadow:inse
   <section id="screen-loc" class="hide">
     <div class="topbar"><button class="btn ghost" id="lcBack">← Locations</button><h1 style="margin:0" id="lcTitle">—</h1><div class="spacer"></div>
       <div class="pill">Items <b id="lcItems">0</b> · units <b id="lcUnits">0</b></div>
-      <button class="btn sm" id="lcReq">🚚 Request</button><button class="btn sm" id="lcCount">🔢 Count</button><button class="btn sm" id="lcNewSub">＋ Sub-location</button><button class="btn sm primary" id="lcGame">🎲 Plan a game</button></div>
+      <button class="btn sm" id="lcReq">🚚 Request</button><button class="btn sm" id="lcCount">🔢 Count</button><button class="btn sm ghost" id="lcCountHist" title="Finished counts of this location: open one, download it as CSV">🗂 Past counts</button><button class="btn sm" id="lcNewSub">＋ Sub-location</button><button class="btn sm primary" id="lcGame">🎲 Plan a game</button></div>
     <div class="chipbar" id="lcDrop"></div>
     <div class="seg" id="lcTabs" style="margin-bottom:12px"><button data-t="shift" class="hide">⏱ Shift</button><button data-t="stock" class="on">📦 Inventory</button><button data-t="subs">🧺 Sub-locations</button><button data-t="days">🗓 Days</button><button data-t="log">🕘 Movements</button></div>
     <div id="lcBody"></div>
@@ -238,7 +238,7 @@ td.editable{cursor:pointer} td.editable:hover{background:#1a2338;box-shadow:inse
      packstation/transfers           → ready transfers become ledger events
    Day boundaries: calendar days (local time). Streamer rooms: day = day shift + night shift (build 3).
    ============================================================ */
-const BUILD='2026-11-18a · finishing a count: update the stock / send for review';
+const BUILD='2026-11-18b · past counts · rooms next to Games · game stock by place';
 const INV_CONFIG={apiKey:"AIzaSyAsTYwU0qABmXKuYSpyendwHw3djJc-Bqo",authDomain:"calipoke-inventory.firebaseapp.com",databaseURL:"https://calipoke-inventory-default-rtdb.firebaseio.com",projectId:"calipoke-inventory",storageBucket:"calipoke-inventory.firebasestorage.app",messagingSenderId:"156640764541",appId:"1:156640764541:web:833f96e4b0849b53454714"};
 const STATION_CONFIG={apiKey:"AIzaSyB2I2sR9czF6F29OZMyEZubmwQGP7nWFlc",authDomain:"calipoke-packstation.firebaseapp.com",databaseURL:"https://calipoke-packstation-default-rtdb.firebaseio.com",projectId:"calipoke-packstation",storageBucket:"calipoke-packstation.firebasestorage.app",messagingSenderId:"125288117157",appId:"1:125288117157:web:461b4d553e100c07b9ae4c"};
 const ROOT='inv', STATION_PATH='packstation';
@@ -650,7 +650,8 @@ function countStartScreen(loc,opts){ let day=opts.day||dayOf(Date.now());
     const d=modal('<h2>'+(opts.title||'🔢 Count · '+locName(loc))+'</h2><p class="sub" style="font-size:13px">Press <b>Start count</b> when you begin. The system fixes this moment and what it expects here — the whole list is shown and compared with it. The count is saved line by line: you can close the window and continue later, and it ends only when you press <b>Finish count</b>.</p>'+
       '<div class="kvs"><div class="kv"><div class="n">'+ks.length+'</div><div class="l">products expected</div></div><div class="kv"><div class="n">'+fmt(units)+'</div><div class="l">units expected</div></div></div>'+
       '<div class="row" style="margin-top:16px">'+(isAdmin()&&!opts.shift?'<span class="mini">as of</span><input id="ctDay" class="tinput" type="date" value="'+day+'" max="'+dayOf(Date.now())+'" style="font-family:var(--body);color-scheme:dark;padding:6px 8px" title="Count for a past day: corrections are dated to the end of that day and ripple forward">':'')+
-      '<div class="spacer"></div><button class="btn ghost" id="csX">Cancel</button><button class="btn primary lg" id="csGo">▶ Start count</button></div>');
+      (!opts.shift&&!isSub(loc)&&countsOf(loc).length?'<button class="btn ghost sm" id="csHist">🗂 Past counts ('+countsOf(loc).length+')</button>':'')+'<div class="spacer"></div><button class="btn ghost" id="csX">Cancel</button><button class="btn primary lg" id="csGo">▶ Start count</button></div>');
+    const ch=d.querySelector('#csHist'); if(ch) ch.onclick=()=>openCountHistory(loc);
     const cd=d.querySelector('#ctDay'); if(cd) cd.addEventListener('change',()=>{ day=cd.value||dayOf(Date.now()); show(); });
     d.querySelector('#csX').onclick=closeModal;
     d.querySelector('#csGo').onclick=async()=>{ const e2=expFor(), L={}; Object.keys(e2).forEach(k=>{ if(e2[k]) L[fbKey(k)]={item:k,exp:+e2[k]}; });
@@ -658,6 +659,56 @@ function countStartScreen(loc,opts){ let day=opts.day||dayOf(Date.now());
       CSESS[sk]=rec; await R.child('countSessions/'+sk).set(rec); alog('count_start',{text:'Started '+(opts.title||'count · '+locName(loc))+' · '+Object.keys(L).length+' lines',loc:loc}); openCount(loc,opts); renderCurrent(); };
   };
   show();
+}
+
+/* ============================================================
+   PAST COUNTS — every finished count is kept with all of its lines
+   ============================================================ */
+const COUNT_PURPOSE={count:'Count',opening:'Shift opening count',closing:'Shift closing count',game:'Game leftovers count'};
+/* finished counts of a location, newest first. A count saved more than once (the 11/17 double press)
+   is shown once — the applied copy when there is one. */
+function countsOf(loc){ const by={}; const o=COUNTS[loc]||{};
+  for(const id in o){ const c=o[id]; if(!c) continue; const g=c.startedAt?('s'+c.startedAt):id; const cur=by[g];
+    if(!cur||(c.applied&&!cur.applied)||(!!c.applied===!!cur.applied&&(c.at||0)<(cur.at||0))) by[g]=Object.assign({id,loc},c); }
+  return Object.values(by).sort((a,b)=>(b.at||0)-(a.at||0)); }
+function countStatus(c){ if(c.applied) return '<span class="badge ok" title="The counted numbers were written to the stock">stock updated</span>';
+  if(!c.diffs) return '<span class="badge muted">no differences</span>';
+  const open=Object.keys(DISC).some(id=>DISC[id]&&DISC[id].countId===c.id&&DISC[id].status==='open');
+  return open?'<span class="badge warn" title="The differences wait in Discrepancies">waiting for review</span>':'<span class="badge muted">reviewed</span>'; }
+function countRows(c){ const L=c.lines||{}; return Object.keys(L).map(fk=>{ const l=L[fk]||{}; const k=l.item||fk; const it=itemInfo(k); const cnt=l.cnt==null?null:+l.cnt, exp=+l.exp||0;
+    return {k,name:it.name||k,variation:varOf(it.variation),barcode:barcodesOf(it.barcode).join(' / '),exp,cnt,diff:cnt==null?null:cnt-exp,how:l.how||'',tmp:!!l.tmp,image:it.image,bad:cnt!=null&&Math.abs(cnt)>QTY_MAX}; }).sort((a,b)=>a.name.localeCompare(b.name)); }
+function countCsv(c){ const rows=[['Location','Count finished','Started','Counted by','As of day','Item','Variation','Barcode','Expected','Counted','Difference','Status','How']];
+  countRows(c).forEach(r=>rows.push([locName(c.loc),fmtTime(c.at),fmtTime(c.startedAt),c.by||'',c.day||'',r.name,r.variation,r.barcode,r.exp,r.cnt==null?'':r.cnt,r.diff==null?'':r.diff,r.cnt==null?'not counted':(r.diff?'differs':'match'),r.how]));
+  csv(rows,'count '+locName(c.loc)+' '+(c.day||dayOf(c.at||Date.now()))+' '+fmtTime(c.at).slice(6).replace(':','')+'.csv'); }
+function openCountHistory(loc){ const list=countsOf(loc);
+  const d=modal('<h2>🗂 Past counts · '+esc(locName(loc))+'</h2><p class="sub" style="font-size:13px">Every finished count is kept with all of its lines — what the system expected at that moment and what was counted. Open one to look at it, or download it as CSV.</p>'+
+    (list.length?'<div class="tscroll" style="max-height:60vh"><table><thead><tr><th>Finished</th><th>Day</th><th>Kind</th><th>By</th><th class="num">Lines</th><th class="num">Counted</th><th class="num">Differ</th><th class="num">Not counted</th><th>Result</th><th></th></tr></thead><tbody>'+
+      list.map(c=>'<tr><td class="mono">'+esc(fmtTime(c.at))+'</td><td class="mono">'+esc(c.day||'')+'</td><td>'+esc(COUNT_PURPOSE[c.purpose]||c.purpose||'Count')+'</td><td>'+esc(c.by||'')+'</td><td class="num">'+Object.keys(c.lines||{}).length+'</td><td class="num">'+(c.counted==null?'':c.counted)+'</td><td class="num"'+(c.diffs?' style="color:var(--warn)"':'')+'>'+(c.diffs||0)+'</td><td class="num">'+(c.notCounted||0)+'</td><td>'+countStatus(c)+'</td>'+
+        '<td class="num" style="white-space:nowrap"><button class="btn sm" data-cview="'+esc(c.id)+'">Open</button> <button class="btn sm ghost" data-ccsv="'+esc(c.id)+'">⬇ CSV</button></td></tr>').join('')+'</tbody></table></div>'
+      :'<div class="empty">No finished counts in '+esc(locName(loc))+' yet.</div>')+
+    '<div class="row" style="margin-top:14px"><div class="spacer"></div>'+(list.length>1?'<button class="btn ghost" id="chAll">⬇ All counts in one CSV</button>':'')+'<button class="btn" onclick="closeModal()">Close</button></div>',true);
+  const byId=id=>list.find(c=>c.id===id);
+  d.querySelectorAll('[data-cview]').forEach(b=>b.onclick=()=>openCountView(loc,b.dataset.cview));
+  d.querySelectorAll('[data-ccsv]').forEach(b=>b.onclick=()=>countCsv(byId(b.dataset.ccsv)));
+  const all=d.querySelector('#chAll'); if(all) all.onclick=()=>{ const rows=[['Location','Count finished','Counted by','As of day','Item','Variation','Barcode','Expected','Counted','Difference','Status']];
+    list.forEach(c=>countRows(c).forEach(r=>rows.push([locName(loc),fmtTime(c.at),c.by||'',c.day||'',r.name,r.variation,r.barcode,r.exp,r.cnt==null?'':r.cnt,r.diff==null?'':r.diff,r.cnt==null?'not counted':(r.diff?'differs':'match')]))); csv(rows,'counts '+locName(loc)+'.csv'); };
+}
+function openCountView(loc,id){ const c=countsOf(loc).find(x=>x.id===id)||(COUNTS[loc]&&COUNTS[loc][id]&&Object.assign({id,loc},COUNTS[loc][id])); if(!c){ toast('Count not found','warn'); return; }
+  const rows=countRows(c); let f='all', q='';
+  const n={all:rows.length,diff:rows.filter(r=>r.diff).length,none:rows.filter(r=>r.cnt==null).length,match:rows.filter(r=>r.diff===0).length};
+  const expU=rows.reduce((a,r)=>a+r.exp,0), cntU=rows.reduce((a,r)=>a+(r.cnt==null||r.bad?r.exp:r.cnt),0);   // a barcode typed into a quantity field is not added up
+  const d=modal('<h2>🔢 '+esc(COUNT_PURPOSE[c.purpose]||'Count')+' · '+esc(locName(loc))+'</h2><div class="row" style="gap:8px;flex-wrap:wrap"><span class="pill">finished <b>'+esc(fmtTime(c.at))+'</b></span>'+(c.startedAt?'<span class="pill">started <b>'+esc(fmtTime(c.startedAt))+'</b></span>':'')+'<span class="pill">by <b>'+esc(c.by||'—')+'</b></span>'+(c.day?'<span class="pill">as of <b>'+esc(c.day)+'</b></span>':'')+countStatus(c)+'</div>'+
+    '<div class="kvs" style="margin-top:12px"><div class="kv"><div class="n">'+n.all+'</div><div class="l">lines</div></div><div class="kv ok"><div class="n">'+n.match+'</div><div class="l">match</div></div><div class="kv"><div class="n"'+(n.diff?' style="color:var(--warn)"':'')+'>'+n.diff+'</div><div class="l">differ</div></div><div class="kv"><div class="n">'+n.none+'</div><div class="l">not counted</div></div><div class="kv"><div class="n">'+fmt(expU)+'</div><div class="l">units expected</div></div><div class="kv info"><div class="n">'+fmt(cntU)+'</div><div class="l">units after the count</div></div></div>'+
+    '<div class="row" style="margin-top:12px"><input id="cvQ" class="tinput" style="max-width:300px" placeholder="Find a product…" autocomplete="off"><div class="chipsel" id="cvF" style="margin:0"></div><div class="spacer"></div><button class="btn ghost" id="cvBack">← Past counts</button><button class="btn primary" id="cvCsv">⬇ CSV</button></div>'+
+    '<div class="tscroll" style="max-height:52vh;margin-top:10px"><table><thead><tr><th></th><th>Item</th><th class="num">Expected</th><th class="num">Counted</th><th class="num">Δ</th><th>Status</th></tr></thead><tbody id="cvBody"></tbody></table></div>',true);
+  const draw=()=>{ d.querySelector('#cvF').innerHTML=[['all','All'],['diff','Differ'],['none','Not counted'],['match','Match']].map(x=>'<button class="chip'+(f===x[0]?' on':'')+'" data-f="'+x[0]+'">'+x[1]+' · '+n[x[0]]+'</button>').join('');
+    d.querySelectorAll('#cvF [data-f]').forEach(b=>b.onclick=()=>{ f=b.dataset.f; draw(); });
+    const list=rows.filter(r=>(f==='all'||(f==='diff'&&r.diff)||(f==='none'&&r.cnt==null)||(f==='match'&&r.diff===0))&&(!q||norm(r.name).includes(q)||norm(r.variation).includes(q)||r.barcode.includes(q)));
+    d.querySelector('#cvBody').innerHTML=list.length?list.map(r=>'<tr><td>'+img(r.image)+'</td><td><b>'+esc(r.name)+'</b>'+(r.variation?'<br><span class="mini">'+esc(r.variation)+'</span>':'')+(r.tmp?' <span class="badge warn">temp</span>':'')+(r.bad?' <span class="badge err" title="A barcode was scanned into the quantity field during this count">not a quantity</span>':'')+'</td><td class="num">'+fmt(r.exp)+'</td><td class="num">'+(r.cnt==null?'—':fmt(r.cnt))+'</td>'+
+      '<td class="num" style="font-weight:700;color:'+(r.diff?(r.diff>0?'var(--ok)':'var(--err)'):'var(--muted)')+'">'+(r.diff==null?'':(r.diff>0?'+':'')+r.diff)+'</td><td>'+(r.cnt==null?'<span class="badge muted">not counted</span>':r.diff?'<span class="badge warn">differs</span>':'<span class="badge ok">match</span>')+'</td></tr>').join(''):'<tr><td colspan="6"><div class="empty" style="padding:18px">Nothing here.</div></td></tr>'; };
+  d.querySelector('#cvQ').addEventListener('input',e=>{ q=norm(e.target.value); draw(); });
+  d.querySelector('#cvBack').onclick=()=>openCountHistory(loc); d.querySelector('#cvCsv').onclick=()=>countCsv(c);
+  draw();
 }
 
 /* ============================================================
@@ -671,7 +722,18 @@ const gameStatus=s=>s.status==='open'?'planning':(s.status||'planning');
 const PLAN_LOCS=['stockroom','gamearea'];                       // places where a game can be planned and built
 const gameHome=s=>(s&&s.home&&LOC_BY_ID[s.home])?s.home:'stockroom';   // the place a game takes its products from and returns them to
 const gHome=()=>gameHome(SUBS[curGame]);
-const readyInStockroom=k=>{ const h=gHome(); return balAt(h,k)-(reservedAt(h)[k]||0); };
+/* units of a place that Transfer Requests have already asked for: approved requests (as before) plus
+   requests still waiting for approval that name this place as the source */
+function requestedFrom(loc){ const m=reservedAt(loc); const nmL=norm((LOC_BY_ID[loc]||{}).name||''), tr=norm(TR_NAME[loc]||'');
+  for(const id in STR){ const t=STR[id]; if(!t||t.status!=='pending') continue; const items=Array.isArray(t.items)?t.items:Object.values(t.items||{});
+    items.forEach(ln=>{ const f=norm(ln.from||''); if(!f||(f!==nmL&&f!==tr)) return; const ik=fbKey(ln.ikey||keyOf(ln.name,ln.variation||'')); m[ik]=(m[ik]||0)+(+ln.qty||0); }); }
+  return m; }
+/* what can go into a game from a place: on the shelf there, not inside another game (those units are already
+   out of the shelf balance) and not asked for by a transfer */
+const readyAt=(loc,k)=>balAt(loc,k)-(requestedFrom(loc)[fbKey(k)]||0);
+const readyInStockroom=k=>readyAt(gHome(),k);
+/* a game built in the Streaming Game Area can also pull from the Stockroom */
+const gFeeder=()=>gHome()==='gamearea'&&canLoc('stockroom')?'stockroom':null;
 function whereIs(k,exclLoc){ const w=[]; LOCS.forEach(l=>{ if(l.id===exclLoc) return; const b=balAt(l.id,k); if(b) w.push(locName(l.id)+' '+fmt(b)); }); Object.keys(SUBS).forEach(id=>{ const s=SUBS[id]; if(s.status!=='closed'&&s.items&&+s.items[fbKey(k)]) w.push('🧺 '+s.name+' '+fmt(+s.items[fbKey(k)])); }); return w; }
 function openPlanGame(){ if(!canPlanGame()){ toast('Games are planned in the Stockroom or the Streaming Game Area — ask the team there','warn'); return; }
   const places=PLAN_LOCS.filter(canLoc); if(!places.length){ toast('Your role has no access to the places where games are planned','warn'); return; }
@@ -711,7 +773,7 @@ function renderGame(){
   $('#gmActs').innerHTML=acts.join('');
   const keys=Object.keys(items).filter(k=>+items[k]||start[k]||sold[k]).sort((a,b)=>itemInfo(a).name.localeCompare(itemInfo(b).name)); const q=norm(gmQ);
   const HN=esc(locName(gameHome(s)));
-  const hint=st==='planning'?'Build the list from '+HN+': scan or type a product. Open boxes into packs, group products into bundles.':st==='ready'?(s.editing?'Editing the list.':'List is ready. Move the game to the streamer\'s room — the streamer presses Start game there.'):live?'Selling: scan or type a product or a bundle. Leftovers stay in the game.':st==='ended'?'Game ended — leftovers are fixed in the game. Count them if needed, then move the game whole to another room or back to '+HN+' (Return all puts leftovers on the shelf).':'Closed — kept in history.';
+  const hint=st==='planning'?'Build the list from '+HN+(gameHome(s)==='gamearea'?' — what is in the Stockroom is shown too and can be transferred in':'')+': scan or type a product. Open boxes into packs, group products into bundles.':st==='ready'?(s.editing?'Editing the list.':'List is ready. Move the game to the streamer\'s room — the streamer presses Start game there.'):live?'Selling: scan or type a product or a bundle. Leftovers stay in the game.':st==='ended'?'Game ended — leftovers are fixed in the game. Count them if needed, then move the game whole to another room or back to '+HN+' (Return all puts leftovers on the shelf).':'Closed — kept in history.';
   const kv='<div class="kvs">'+(start&&unitsOf(start)?'<div class="kv"><div class="n">'+fmt(unitsOf(start))+'</div><div class="l">start</div></div><div class="kv ok"><div class="n">'+fmt(unitsOf(sold))+'</div><div class="l">sold</div></div>':'')+'<div class="kv info"><div class="n">'+fmt(unitsOf(items))+'</div><div class="l">'+(start&&unitsOf(start)?'left':'units in the game')+'</div></div><div class="kv"><div class="n">'+Object.keys(bundles).length+'</div><div class="l">bundles</div></div><div class="kv"><div class="n" style="font-size:16px">'+esc(locName(s.at))+'</div><div class="l">now in</div></div></div>';
   const scan=(edit||live)?'<div class="scanwrap"><div class="scanhead"><span class="mode'+(live?'':' label')+'">'+(live?'💲 Selling':'＋ Adding from '+HN)+'</span><span class="mini">'+esc(hint)+'</span></div><div class="scanrow" style="position:relative"><input id="gmScan" autocomplete="off" placeholder="'+(live?'Scan or type a product or bundle…':'Scan or type a product…')+'"><button class="btn" id="gmCam">📷</button>'+(edit?'<button class="btn" id="gmNewBundle">🎁 Create bundle</button>':'')+'<div class="sugg hide" id="gmSugg"></div></div></div>':'<div class="note info" style="margin-bottom:12px">'+esc(hint)+'</div>';
   const resv=bundleReserved(s); const all=gmTab==='all';
@@ -747,7 +809,7 @@ function renderGame(){
   const sc=$('#gmScan'), sg=$('#gmSugg'); if(!sc) return;
   const pick=(kind,k)=>{ sc.value=''; sg.classList.add('hide'); if(kind==='bundle') askSellBundle(k); else if(live) askSell(k); else askAdd(k); };
   const candidates=v=>{ const out=[]; if(live){ const nv=norm(v); Object.keys(bundles).forEach(bid=>{ if(norm(bundles[bid].name).includes(nv)) out.push({kind:'bundle',k:bid,name:bundles[bid].name,sub:'bundle',here:''}); }); (BC[nv]||[]).forEach(k=>{ if(items[fbKey(k)]) out.push({kind:'item',k:fbKey(k),name:itemInfo(k).name,type:itemInfo(k).type,sub:varOf(itemInfo(k).variation),here:'left '+fmt(items[fbKey(k)]),img:itemInfo(k).image}); }); keys.forEach(k=>{ if(out.some(o=>o.k===k)) return; const it=itemInfo(k); if(norm(it.name).includes(nv)||norm(it.variation).includes(nv)) out.push({kind:'item',k,name:it.name,type:it.type,sub:varOf(it.variation),here:'left '+fmt(items[k]||0),img:it.image}); }); return out.slice(0,14); }
-    return searchProducts(v,14).map(p=>{ const r=readyInStockroom(p.ikey); return {kind:'item',k:p.ikey,name:p.name,type:p.type,sub:varOf(p.variation),here:r>0?'ready '+fmt(r):'not available',ok:r>0,img:p.image}; }); };
+    const fd=gFeeder(); return searchProducts(v,14).map(p=>{ const r=Math.max(0,readyInStockroom(p.ikey)), r2=fd?Math.max(0,readyAt(fd,p.ikey)):0; return {kind:'item',k:p.ikey,name:p.name,type:p.type,sub:varOf(p.variation),here:(r>0?'ready '+fmt(r):'')+(r2>0?(r>0?' · ':'')+locName(fd)+' '+fmt(r2):'')||'not available',ok:r>0||r2>0,img:p.image}; }); };
   const sugg=()=>{ const v=sc.value.trim(); if(!v){ sg.classList.add('hide'); return; } const rows=candidates(v); if(!rows.length){ sg.classList.add('hide'); return; }
     sg.innerHTML=rows.map((r,i)=>'<button class="mpick" data-i="'+i+'">'+(r.kind==='bundle'?'<div style="width:44px;height:44px;border-radius:8px;background:#231a3a;display:grid;place-items:center;font-size:22px">🎁</div>':img(r.img))+'<div><div class="pn">'+esc(r.name)+'</div><div class="pv">'+esc(r.sub)+'</div></div><span class="pt'+(r.ok||live?' here':'')+'"'+(r.ok===false?' style="color:var(--err)"':'')+'>'+esc(r.here)+'</span></button>').join(''); sg.classList.remove('hide');
     sg.querySelectorAll('.mpick').forEach(b=>b.onmousedown=e=>{ e.preventDefault(); const r=rows[+b.dataset.i]; pick(r.kind,r.k); }); };
@@ -757,14 +819,30 @@ function renderGame(){
   setTimeout(()=>{ if(document.activeElement!==$('#gmQ')) sc.focus(); },60);
 }
 /* ---- add a product from the Stockroom (availability gate) ---- */
-function askAdd(k){ const H=gHome(), HN=esc(locName(H)); const it=itemInfo(k); const ready=readyInStockroom(k); const have=balAt(H,k); const res=(reservedAt(H)[k]||0);
-  if(ready<=0){ const w=whereIs(k,H); beep('err'); modal('<h2 style="color:var(--err)">Not available in '+HN+'</h2><div class="pcard">'+img(it.image)+'<div><div class="cn">'+nm(it)+'</div><div class="cv">'+esc(varOf(it.variation))+'</div></div></div>'+
-      '<p class="sub" style="font-size:14px">'+(have>0?''+HN+' has '+fmt(have)+' but <b style="color:var(--warn)">'+fmt(res)+' are reserved</b> by an approved Transfer Request.':(w.length?'It is not in '+HN+'. Found in: <b>'+esc(w.join(' · '))+'</b>.':'It is not in any location.'))+'<br><br>'+(balAt('warehouse',k)?'Warehouse has <b>'+fmt(balAt('warehouse',k))+'</b> — ':'')+'<b>request a transfer to '+HN+' first</b>, then add it to the game.</p>'+
+function askAdd(k){ const H=gHome(), HN=esc(locName(H)); const it=itemInfo(k); const fd=gFeeder();
+  const srcs=[{loc:H,ready:Math.max(0,readyAt(H,k)),have:balAt(H,k)}]; if(fd) srcs.push({loc:fd,ready:Math.max(0,readyAt(fd,k)),have:balAt(fd,k)});
+  const resOf=x=>Math.max(0,x.have-x.ready);
+  if(!srcs.some(x=>x.ready>0)){ const w=whereIs(k,H); beep('err'); const held=srcs.filter(x=>x.have>0);
+    modal('<h2 style="color:var(--err)">Not available'+(fd?'':' in '+HN)+'</h2><div class="pcard">'+img(it.image)+'<div><div class="cn">'+nm(it)+'</div><div class="cv">'+esc(varOf(it.variation))+'</div></div></div>'+
+      '<p class="sub" style="font-size:14px">'+(held.length?held.map(x=>esc(locName(x.loc))+' has '+fmt(x.have)+' but <b style="color:var(--warn)">'+fmt(resOf(x))+' are asked for</b> by a Transfer Request.').join('<br>'):(w.length?'It is not in '+HN+(fd?' or '+esc(locName(fd)):'')+'. Found in: <b>'+esc(w.join(' · '))+'</b>.':'It is not in any location.'))+'<br><br>'+(balAt('warehouse',k)?'Warehouse has <b>'+fmt(balAt('warehouse',k))+'</b> — ':'')+'<b>request a transfer to '+HN+' first</b>, then add it to the game.</p>'+
       '<div class="row" style="margin-top:14px"><a class="btn" href="'+TRANSFER_APP_URL+'" target="_blank">↗ Transfer Request</a>'+(isAdmin()?'<button class="btn warn" id="naAdm">✎ Add anyway (admin correction)</button>':'')+'<button class="btn ghost" onclick="closeModal()">Close</button></div>'); const na=$('#naAdm'); if(na) na.onclick=()=>{ closeModal(); openAdjust(k,'sub:'+curGame); }; return; }
-  const d=modal('<h2>Add to the game</h2><div class="pcard">'+img(it.image)+'<div><div class="cn">'+nm(it)+'</div><div class="cv">'+esc(varOf(it.variation))+'</div><div class="cv">Ready in '+HN+': <b style="color:var(--ok)">'+fmt(ready)+'</b>'+(res?' · reserved '+fmt(res):'')+'</div></div></div>'+
-    '<input id="gaQ" class="bigqty" type="number" min="1" max="'+ready+'" value="1"><div class="row"><button class="btn sm" data-q="6">+6</button><button class="btn sm" data-q="12">+12</button><button class="btn sm" data-q="24">+24</button><button class="btn sm ghost" id="gaAll">All ('+fmt(ready)+')</button></div><button class="btn primary lg" id="gaOk" style="width:100%;margin-top:12px">＋ Add</button>');
-  const inp=d.querySelector('#gaQ'); d.querySelectorAll('[data-q]').forEach(b=>b.onclick=()=>{ inp.value=int(inp.value)+(+b.dataset.q); }); d.querySelector('#gaAll').onclick=()=>{ inp.value=ready; };
-  const ok=async()=>{ const n=int(inp.value); if(n<1) return; if(n>ready){ toast('Only '+fmt(ready)+' ready in '+HN+'','err'); return; } d.querySelector('#gaOk').disabled=true; await postEvent({item:k,qty:n,from:H,to:'sub:'+curGame,kind:'sub',note:'game · '+SUBS[curGame].name}); beep('ok'); closeModal(); toast('＋ '+n+' × '+it.name,'ok',1800); };
+  let src=srcs.find(x=>x.ready>0);
+  const d=modal('<h2>Add to the game</h2><div class="pcard">'+img(it.image)+'<div><div class="cn">'+nm(it)+'</div><div class="cv">'+esc(varOf(it.variation))+'</div><div class="cv" id="gaInfo"></div></div></div>'+
+    (fd?'<div class="fld" style="margin-top:10px"><label>Take it from</label><div class="chipsel" id="gaSrc"></div></div>':'')+
+    '<input id="gaQ" class="bigqty" type="number" min="1" value="1"><div class="row"><button class="btn sm" data-q="6">+6</button><button class="btn sm" data-q="12">+12</button><button class="btn sm" data-q="24">+24</button><button class="btn sm ghost" id="gaAll"></button></div><button class="btn primary lg" id="gaOk" style="width:100%;margin-top:12px"></button>');
+  const inp=d.querySelector('#gaQ');
+  const draw=()=>{ const far=src.loc!==H; inp.max=src.ready; if(int(inp.value)>src.ready) inp.value=src.ready;
+    d.querySelector('#gaInfo').innerHTML='Ready in '+esc(locName(src.loc))+': <b style="color:var(--ok)">'+fmt(src.ready)+'</b>'+(resOf(src)?' · asked for by transfers '+fmt(resOf(src)):'');
+    d.querySelector('#gaAll').textContent='All ('+fmt(src.ready)+')'; d.querySelector('#gaOk').textContent=far?'⇄ Transfer from '+locName(src.loc)+' and add':'＋ Add';
+    const host=d.querySelector('#gaSrc'); if(host){ host.innerHTML=srcs.map((x,i)=>'<button class="chip'+(x===src?' on':'')+'" data-src="'+i+'" '+(x.ready>0?'':'disabled style="opacity:.45"')+'>'+LOC_BY_ID[x.loc].icon+' '+esc(locName(x.loc))+' · <b>'+fmt(x.ready)+'</b>'+(x.loc!==H?' <span class="mini">→ transfer</span>':'')+'</button>').join('');
+      host.querySelectorAll('[data-src]').forEach(b=>b.onclick=()=>{ const x=srcs[+b.dataset.src]; if(x.ready>0){ src=x; draw(); inp.focus(); } }); } };
+  draw();
+  d.querySelectorAll('[data-q]').forEach(b=>b.onclick=()=>{ inp.value=Math.min(src.ready,int(inp.value)+(+b.dataset.q)); }); d.querySelector('#gaAll').onclick=()=>{ inp.value=src.ready; };
+  let busy=false;
+  const ok=async()=>{ if(busy) return; const n=int(inp.value); if(n<1) return; if(n>src.ready){ toast('Only '+fmt(src.ready)+' ready in '+locName(src.loc),'err'); return; } busy=true; d.querySelector('#gaOk').disabled=true;
+    /* from the Stockroom: first a transfer into the place the game is built in, then into the game — both stay in the history */
+    if(src.loc!==H) await postEvent({item:k,qty:n,from:src.loc,to:H,kind:'transfer',note:'for game · '+SUBS[curGame].name});
+    await postEvent({item:k,qty:n,from:H,to:'sub:'+curGame,kind:'sub',note:'game · '+SUBS[curGame].name}); beep('ok'); closeModal(); toast('＋ '+n+' × '+it.name+(src.loc!==H?' · transferred from '+locName(src.loc):''),'ok',2200); };
   d.querySelector('#gaOk').onclick=ok; inp.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); ok(); } }); setTimeout(()=>{ inp.focus(); inp.select(); },50); }
 function askRemove(k){ const H=gHome(), HN=esc(locName(H)); const s=SUBS[curGame]; const it=itemInfo(k); const have=freeOf(s,k); if(have<=0){ toast('Everything is inside bundles — edit the bundle first','warn'); return; }
   const d=modal('<h2>Return to '+HN+'</h2><div class="pcard">'+img(it.image)+'<div><div class="cn">'+nm(it)+'</div><div class="cv">In the game: <b style="color:var(--ink)">'+fmt(have)+'</b></div></div></div><input id="grQ" class="bigqty" type="number" min="1" max="'+have+'" value="'+have+'"><button class="btn primary lg" id="grOk" style="width:100%;margin-top:12px">↩ Return</button>');
@@ -1034,23 +1112,29 @@ let expandedSub=null;
 function renderLoc(){
   const l=LOC_BY_ID[curLoc]; if(!l){ show('menu'); return; }
   $('#lcTitle').textContent=l.icon+' '+l.name; const tot=totalsAt(curLoc); $('#lcItems').textContent=Object.keys(tot).filter(k=>tot[k]).length; $('#lcUnits').textContent=fmt(unitsOf(tot));
-  $('#lcCount').classList.toggle('hide',curLoc==='warehouse'); { const cs=CSESS[fbKey(curLoc)], b=$('#lcCount'); b.textContent=cs?'🔢 Continue count · since '+hhmm(cs.startedAt):'🔢 Count'; b.classList.toggle('warn',!!cs); b.title=cs?'A count started by '+(cs.by||'someone')+' is in progress':''; } $('#lcReq').classList.toggle('hide',curLoc==='warehouse'); $('#lcReq').onclick=()=>openTransferRequest(curLoc); $('#lcNewSub').classList.toggle('hide',curLoc==='warehouse'); $('#lcGame').classList.toggle('hide',l.kind==='warehouse'||l.kind==='show'||!canPlanGame()); if(isStreamer()){ $('#lcCount').classList.add('hide'); $('#lcNewSub').classList.add('hide'); }
+  $('#lcCount').classList.toggle('hide',curLoc==='warehouse'); { const cs=CSESS[fbKey(curLoc)], b=$('#lcCount'); b.textContent=cs?'🔢 Continue count · since '+hhmm(cs.startedAt):'🔢 Count'; b.classList.toggle('warn',!!cs); b.title=cs?'A count started by '+(cs.by||'someone')+' is in progress':''; } $('#lcReq').classList.toggle('hide',curLoc==='warehouse'); $('#lcReq').onclick=()=>openTransferRequest(curLoc); $('#lcNewSub').classList.toggle('hide',curLoc==='warehouse'); $('#lcGame').classList.toggle('hide',l.kind==='warehouse'||l.kind==='show'||!canPlanGame()); $('#lcCountHist').classList.toggle('hide',curLoc==='warehouse'); if(isStreamer()){ $('#lcCount').classList.add('hide'); $('#lcCountHist').classList.add('hide'); $('#lcNewSub').classList.add('hide'); }
   const strm=isStreamer(); ['days','log'].forEach(t=>$('#lcTabs [data-t="'+t+'"]').classList.toggle('hide',strm)); if(strm&&(lcTab==='days'||lcTab==='log')) lcTab=l.kind==='stream'?'shift':'stock';
   $('#lcTabs [data-t="shift"]').classList.toggle('hide',l.kind!=='stream'); if(lcTab==='shift'&&l.kind!=='stream') lcTab='stock';
-  $('#lcTabs [data-t="subs"]').textContent=(l.kind==='stream'||l.id==='gamearea')?'🎲 Games':l.kind==='show'?'🚐 Shows':'🧺 Sub-locations';
+  $('#lcTabs [data-t="subs"]').textContent=(l.kind==='stream'||PLAN_LOCS.includes(l.id))?'🎲 Games':l.kind==='show'?'🚐 Shows':'🧺 Sub-locations';
   $$('#lcTabs button').forEach(b=>b.classList.toggle('on',b.dataset.t===lcTab));
   /* drop targets: other locations + sub-locations here */
   $('#lcDrop').innerHTML=''; $('#lcDrop').classList.add('hide');
   const body=$('#lcBody');
   if(lcTab==='shift') renderShift(body); else if(lcTab==='stock') renderStock(body); else if(lcTab==='subs') renderSubs(body); else if(lcTab==='days') renderDays(body); else renderLocLog(body);
 }
+/* the rooms a product or a whole game can be dragged onto — shown in the places where games are built */
+function dropSideHTML(what){ if(!PLAN_LOCS.includes(curLoc)||isStreamer()) return '';
+  const rooms=LOCS.filter(x=>x.id!==curLoc&&x.id!=='warehouse'&&(what==='product'||x.kind!=='show'));
+  const here=what==='product'?subsAt(curLoc):[];
+  return '<aside class="dropside"><div class="mini" style="margin-bottom:8px">'+(what==='game'?'Drag a game onto a room to move it there whole:':'Drag a product onto:')+'</div>'+rooms.map(x=>{ const g=gamesAt(x.id).length; return '<span class="chip" data-drop="'+x.id+'">'+x.icon+' '+esc(x.name)+(what==='game'&&g?' <span class="mini">· '+g+' game'+(g===1?'':'s')+'</span>':'')+'</span>'; }).join('')+
+    (here.length?'<div class="mini" style="margin:10px 0 6px">Games here:</div>'+here.map(s=>'<span class="chip sub" data-drop="sub:'+s.id+'">'+(s.kind==='game'?'🎲':'🧺')+' '+esc(s.name)+'</span>').join(''):'')+'</aside>'; }
 function renderStock(body){
   const m=itemsAt(curLoc), res=reservedAt(curLoc); const q=norm(lcQ);
   let keys=Object.keys(m).filter(k=>m[k]); if(q) keys=keys.filter(k=>norm(itemInfo(k).name).includes(q)||norm(itemInfo(k).variation).includes(q)||barcodesOf(itemInfo(k).barcode).some(b=>b.includes(q)));
   keys.sort((a,b)=>itemInfo(a).name.localeCompare(itemInfo(b).name));
   const whNote=curLoc==='warehouse'?'<div class="note info">Warehouse stock is the live inventory count of CALIPOKE STATION (every location except the store). It is read-only here — shelves, pallets and in-warehouse moves live in <a href="'+WAREHOUSE_PLAN_URL+'" target="_blank">Warehouse Plan</a>; stock leaves the warehouse through a <a href="'+TRANSFER_APP_URL+'" target="_blank">Transfer Request</a>.</div>':'';
   const stNote=curLoc==='stockroom'?'<p class="mini" style="margin-top:8px"><b style="color:var(--ok)">Ready</b> = can be used · <b style="color:var(--warn)">Reserved</b> = an approved Transfer Request is waiting to be prepared · a product that is 0 here but exists in another location shows up in the search with where it is.</p>':'';
-  const side=curLoc==='stockroom'?'<aside class="dropside"><div class="mini" style="margin-bottom:8px">Drag a product onto:</div>'+LOCS.filter(x=>x.id!==curLoc&&x.id!=='warehouse').map(x=>'<span class="chip" data-drop="'+x.id+'">'+x.icon+' '+esc(x.name)+'</span>').join('')+(subsAt(curLoc).length?'<div class="mini" style="margin:10px 0 6px">Sub-locations here:</div>'+subsAt(curLoc).map(s=>'<span class="chip sub" data-drop="sub:'+s.id+'">'+(s.kind==='game'?'🎲':'🧺')+' '+esc(s.name)+'</span>').join(''):'')+'</aside>':'';
+  const side=dropSideHTML('product');
   body.innerHTML=(side?'<div class="withside">'+side+'<div class="mainside">':'')+'<div class="row"><input id="lcQ" class="tinput" style="max-width:380px" placeholder="Find, scan or type a barcode…" value="'+esc(lcQ)+'" autocomplete="off"><button class="btn sm" id="lcCam">📷</button>'+(isAdmin()&&curLoc!=='warehouse'?'<button class="btn sm ghost" id="lcAdd">＋ Add / correct a product</button>':'')+'</div>'+whNote+stNote+
     '<div class="list" id="lcList">'+(keys.length?keys.map(k=>rowHTML(k,m[k],res[k]||0)).join(''):'<div class="empty">'+(q?'Nothing matches. '+elsewhereHTML(q):'Nothing in '+esc(locName(curLoc))+' yet.')+'</div>')+'</div>'+(q&&keys.length?'<div class="mini" style="margin-top:10px">'+elsewhereHTML(q)+'</div>':'')+(side?'</div></div>':'');
   const inp=$('#lcQ'); inp.addEventListener('input',()=>{ lcQ=inp.value; const pos=inp.selectionStart; renderStock(body); const n=$('#lcQ'); n.focus(); try{ n.setSelectionRange(pos,pos); }catch(e){} });
@@ -1068,9 +1152,9 @@ function rowHTML(k,qty,reserved,loc){ const it=itemInfo(k); const at=loc||curLoc
 function wireRows(sel,loc){ $$(sel+' [data-open]').forEach(b=>b.onclick=()=>openBoxAt(loc,b.dataset.open)); $$(sel+' [data-tr]').forEach(b=>b.onclick=()=>openTransfer(b.dataset.tr,loc)); $$(sel+' [data-adj]').forEach(b=>b.onclick=()=>openAdjust(b.dataset.adj,loc)); }
 function renderSubs(body){ if(isStreamer()){ renderStreamerGames(body); return; }
   const subs=subsAt(curLoc); const closed=Object.keys(SUBS).filter(id=>SUBS[id].status==='closed'&&(SUBS[id].returnedTo===curLoc||SUBS[id].at===curLoc)).map(id=>Object.assign({id},SUBS[id])).sort((a,b)=>(b.closedAt||0)-(a.closedAt||0)).slice(0,20);
-  const open=subs.find(s=>s.id===expandedSub);
-  body.innerHTML=(subs.length?'<p class="mini" style="margin:0 0 8px">Tap a tile to see what is inside. Drag a tile onto a location above to move the whole sub-location.</p><div class="stiles">'+subs.map(s=>stileHTML(s)).join('')+'</div>':'<div class="empty">No sub-locations here. Create one for a game or a show, then move products into it (drag a product onto its chip above).</div>')+(open?subHTML(open):'')+
-    (closed.length?'<h2 style="margin-top:22px">Closed</h2>'+closed.map(s=>'<div class="subcard" style="opacity:.7"><div class="sh"><span class="sn">'+esc(s.name)+'</span><span class="badge muted">closed '+esc(fmtTime(s.closedAt))+'</span><div class="spacer"></div><button class="btn sm ghost" data-subhist="'+s.id+'">🕘 History</button></div></div>').join(''):'');
+  const open=subs.find(s=>s.id===expandedSub); const side=dropSideHTML('game'), gm=PLAN_LOCS.includes(curLoc);
+  body.innerHTML=(side?'<div class="withside">'+side+'<div class="mainside">':'')+(subs.length?'<p class="mini" style="margin:0 0 8px">Tap a tile to see what is inside. '+(side?'Drag a tile onto a room on the left to move the whole game there.':'Use “Move whole sub to…” inside the tile to move it.')+'</p><div class="stiles">'+subs.map(s=>stileHTML(s)).join('')+'</div>':'<div class="empty">'+(gm?'No games here yet. Press <b>🎲 Plan a game</b> to build one — it appears here and can be dragged onto a room.':'No sub-locations here. Create one for a game or a show, then move products into it.')+'</div>')+(open?subHTML(open):'')+
+    (closed.length?'<h2 style="margin-top:22px">Closed</h2>'+closed.map(s=>'<div class="subcard" style="opacity:.7"><div class="sh"><span class="sn">'+esc(s.name)+'</span><span class="badge muted">closed '+esc(fmtTime(s.closedAt))+'</span><div class="spacer"></div><button class="btn sm ghost" data-subhist="'+s.id+'">🕘 History</button></div></div>').join(''):'')+(side?'</div></div>':'');
   $$('#lcBody [data-stile]').forEach(t=>t.onclick=e=>{ if(e.target.closest('button,select')) return; expandedSub=expandedSub===t.dataset.stile?null:t.dataset.stile; renderSubs(body); const el=$('#lcBody .subcard'); if(el) el.scrollIntoView({behavior:'smooth',block:'nearest'}); });
   subs.forEach(s=>{ const items=s.items||{}; const keys=Object.keys(items).filter(k=>items[k]).sort((a,b)=>itemInfo(a).name.localeCompare(itemInfo(b).name)); const host=body.querySelector('[data-sublist="'+s.id+'"]'); if(host) host.innerHTML=keys.length?keys.map(k=>rowHTML(k,items[k],0,'sub:'+s.id)).join(''):'<div class="empty" style="padding:16px">Empty — drag products here from the Stock tab.</div>'; wireRows('[data-sublist="'+s.id+'"]','sub:'+s.id); });
   $$('#lcBody [data-submove]').forEach(sl=>sl.onchange=()=>{ if(sl.value) moveSub(sl.dataset.submove,sl.value); });
@@ -1265,7 +1349,7 @@ $('#mGame').onclick=openPlanGame; $('#lcGame').onclick=openPlanGame; $('#mBoxes'
 $('#gmBack').onclick=()=>{ if(gmBackTo==='loc'&&curLoc){ show('loc'); lcTab='subs'; renderLoc(); } else goMenu(); };
 $('#mReload').onclick=()=>{ if(isAdmin()) loadInventory(true); };
 $$('#lcTabs button').forEach(b=>b.onclick=()=>{ lcTab=b.dataset.t; renderLoc(); });
-$('#lcCount').onclick=()=>openCount(curLoc); $('#lcNewSub').onclick=()=>openNewSub(curLoc);
+$('#lcCount').onclick=()=>openCount(curLoc); $('#lcCountHist').onclick=()=>openCountHistory(curLoc); $('#lcNewSub').onclick=()=>openNewSub(curLoc);
 $('#ovDate').addEventListener('change',e=>{ ovDay=e.target.value||dayOf(Date.now()); renderOverview(); }); $('#ovToday').onclick=()=>{ ovDay=dayOf(Date.now()); renderOverview(); }; $('#ovQ').addEventListener('input',renderOverview); $('#ovZero').addEventListener('change',renderOverview); $('#ovSort').addEventListener('change',renderOverview); [['ovType','type'],['ovBrand','brand'],['ovSeries','series']].forEach(([id,f])=>$('#'+id).addEventListener('change',e=>{ ovF[f]=e.target.value; renderOverview(); })); $('#ovClear').onclick=()=>{ ovF.type=ovF.brand=ovF.series=''; $('#ovQ').value=''; $('#ovSort').value='name'; renderOverview(); };
 $('#ovCsv').onclick=()=>{ const t=$('#ovTbl'); csv([['Item','Type','Brand','Series',...t._cols.map(c=>c.name),'Total']].concat(t._rows.map(r=>[itemInfo(r.k).name+(varOf(itemInfo(r.k).variation)?' · '+itemInfo(r.k).variation:''),itemInfo(r.k).type||'',itemInfo(r.k).brand||'',itemInfo(r.k).series||'',...r.vals,r.vals.reduce((a,b)=>a+b,0)])),'cph_inventory_'+ovDay+'.csv'); };
 $$('#dcTabs button').forEach(b=>b.onclick=()=>{ dcTab=b.dataset.t; renderDisc(); }); $('#dcUpd').onclick=()=>{ toast('Reading Daily SOH…','info',1500); refreshDSOH(true); };
