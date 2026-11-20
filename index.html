@@ -172,7 +172,7 @@ td.editable{cursor:pointer} td.editable:hover{background:#1a2338;box-shadow:inse
       <div class="pill">Items <b id="lcItems">0</b> · units <b id="lcUnits">0</b></div>
       <button class="btn sm" id="lcReq">🚚 Request</button><button class="btn sm" id="lcCount">🔢 Count</button><button class="btn sm ghost" id="lcCountHist" title="Finished counts of this location: open one, download it as CSV">🗂 Past counts</button><button class="btn sm" id="lcNewSub">＋ Sub-location</button><button class="btn sm primary" id="lcGame">🎲 Plan a game</button></div>
     <div class="chipbar" id="lcDrop"></div>
-    <div class="seg" id="lcTabs" style="margin-bottom:12px"><button data-t="shift" class="hide">⏱ Shift</button><button data-t="stock" class="on">📦 Inventory</button><button data-t="subs">🧺 Sub-locations</button><button data-t="days">🗓 Days</button><button data-t="log">🕘 Movements</button></div>
+    <div class="seg" id="lcTabs" style="margin-bottom:12px"><button data-t="shift" class="hide">⏱ Shift</button><button data-t="stock" class="on">📦 Inventory</button><button data-t="subs">🧺 Sub-locations</button><button data-t="sales" class="hide">💲 Sales</button><button data-t="days">🗓 Days</button><button data-t="log">🕘 Movements</button></div>
     <div id="lcBody"></div>
   </section>
 
@@ -238,7 +238,7 @@ td.editable{cursor:pointer} td.editable:hover{background:#1a2338;box-shadow:inse
      packstation/transfers           → ready transfers become ledger events
    Day boundaries: calendar days (local time). Streamer rooms: day = day shift + night shift (build 3).
    ============================================================ */
-const BUILD='2026-11-19a · Slabs in Slab & Single';
+const BUILD='2026-11-20a · streaming rooms: Shift removed, Sales added';
 const INV_CONFIG={apiKey:"AIzaSyAsTYwU0qABmXKuYSpyendwHw3djJc-Bqo",authDomain:"calipoke-inventory.firebaseapp.com",databaseURL:"https://calipoke-inventory-default-rtdb.firebaseio.com",projectId:"calipoke-inventory",storageBucket:"calipoke-inventory.firebasestorage.app",messagingSenderId:"156640764541",appId:"1:156640764541:web:833f96e4b0849b53454714"};
 const STATION_CONFIG={apiKey:"AIzaSyB2I2sR9czF6F29OZMyEZubmwQGP7nWFlc",authDomain:"calipoke-packstation.firebaseapp.com",databaseURL:"https://calipoke-packstation-default-rtdb.firebaseio.com",projectId:"calipoke-packstation",storageBucket:"calipoke-packstation.firebasestorage.app",messagingSenderId:"125288117157",appId:"1:125288117157:web:461b4d553e100c07b9ae4c"};
 const ROOT='inv', STATION_PATH='packstation';
@@ -324,7 +324,7 @@ function show(s){ screen=s; ['menu','loc','overview','disc','history','game','im
 const isAdmin=()=>MY_ROLE==='admin';
 const isStreamer=()=>!!(window.CPAuth&&CPAuth.user&&CPAuth.user.role==='streamer');
 const canPlanGame=()=>!isStreamer();
-const shiftOpenIn=loc=>{ const sh=openShiftAt(loc); return !!(sh&&sh.status==='open'); };
+const shiftOpenIn=loc=>{ if(SHIFTS_OFF) return true; const sh=openShiftAt(loc); return !!(sh&&sh.status==='open'); };
 let showPastGames=false;
 /* a location the shared access table does not know yet (older calipoke-auth.js): LS Backend and above */
 const canLoc=id=>!window.CPAuth||(((CPAuth.ACCESS||{}).inventory||{})[id]?CPAuth.can(id,'inventory'):['admin','wh_backend','ls_backend'].includes((CPAuth.user||{}).role));
@@ -663,6 +663,81 @@ function countStartScreen(loc,opts){ let day=opts.day||dayOf(Date.now());
       CSESS[sk]=rec; await R.child('countSessions/'+sk).set(rec); alog('count_start',{text:'Started '+(opts.title||'count · '+locName(loc))+' · '+Object.keys(L).length+' lines',loc:loc}); openCount(loc,opts); renderCurrent(); };
   };
   show();
+}
+
+/* ============================================================
+   SALES — streaming rooms. What was sold on a day, per product.
+     inv/sales/{loc}/{day}/{fbKey(item)} = {item,name,variation,qty,note,by,at}
+   For now this is only a record that people fill in and correct by hand:
+   it does NOT change the stock. Loading from sales reports and the rules
+   for the stock come later.
+   ============================================================ */
+let SALES={}, salesLoc=null, salesRef=null, salesDay=null;
+const canSalesEdit=()=>!isStreamer();
+function salesWatch(loc){ if(salesLoc===loc) return; if(salesRef) salesRef.off(); SALES={}; salesLoc=loc; salesRef=R.child('sales/'+loc);
+  salesRef.on('value',sn=>{ if(salesLoc!==loc) return; SALES=sn.val()||{}; if(screen==='loc'&&curLoc===loc&&lcTab==='sales'&&!_modal){ const a=document.activeElement; if(a&&(a.id==='saAdd'||a.dataset.saq)) return; renderCurrent(); } }); }
+const salesShift=(day,n)=>{ const d=new Date(day+'T12:00:00'); d.setDate(d.getDate()+n); return dayOf(d.getTime()); };
+const salesDayUnits=day=>Object.values(SALES[day]||{}).reduce((a,x)=>a+(+x.qty||0),0);
+function renderSales(body){ const loc=curLoc; salesWatch(loc); const today=dayOf(Date.now()); if(!salesDay) salesDay=today; const day=salesDay, ed=canSalesEdit();
+  const lines=Object.keys(SALES[day]||{}).map(k=>Object.assign({k},SALES[day][k])).sort((a,b)=>String(a.name||'').localeCompare(String(b.name||'')));
+  const strip=[]; for(let i=13;i>=0;i--) strip.push(salesShift(today,-i));
+  body.innerHTML='<div class="card" style="padding:14px"><div class="row" style="gap:8px"><button class="btn sm" id="saPrev" title="Previous day">◀</button><input id="saDay" type="date" class="tinput" style="max-width:190px" value="'+esc(day)+'" max="'+esc(today)+'"><button class="btn sm" id="saNext" title="Next day"'+(day>=today?' disabled':'')+'>▶</button>'+(day!==today?'<button class="btn sm ghost" id="saToday">Today</button>':'')+
+      '<div class="spacer"></div><span class="pill">products <b>'+lines.length+'</b></span><span class="pill">units sold <b>'+fmt(salesDayUnits(day))+'</b></span><button class="btn sm ghost" id="saCsv">⬇ CSV</button></div>'+
+    '<div class="chipsel" id="saStrip" style="margin:12px 0 0">'+strip.map(d=>{ const u=salesDayUnits(d); return '<button class="chip'+(d===day?' on':'')+'" data-d="'+d+'" style="'+(u?'':'opacity:.55')+'">'+esc(d.slice(5).replace('-','/'))+(u?' · <b>'+fmt(u)+'</b>':'')+'</button>'; }).join('')+'</div></div>'+
+    '<div class="note info" style="margin:12px 0">Sales are only recorded here for now — they do <b>not</b> change the stock of the room. Loading from sales reports comes later.</div>'+
+    (ed?'<div class="scanrow" style="position:relative;padding:0 0 12px"><input id="saAdd" autocomplete="off" placeholder="Add a sold product: scan or type its name…"><div class="sugg hide" id="saSugg" style="position:absolute;left:0;right:0;top:100%;z-index:5;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:6px;max-height:50vh;overflow:auto"></div></div>':'')+
+    (lines.length?'<div class="tscroll" style="max-height:62vh"><table><thead><tr><th></th><th>Product</th><th class="num">Sold</th><th>Note</th><th>Entered</th>'+(ed?'<th></th>':'')+'</tr></thead><tbody>'+lines.map(x=>{ const it=itemInfo(x.item||x.k); return '<tr><td style="width:52px">'+img(it.image,'zoomable')+'</td><td><b>'+esc(x.name||it.name)+'</b>'+(varOf(x.variation||it.variation)?'<br><span class="mini">'+esc(varOf(x.variation||it.variation))+'</span>':'')+'</td>'+
+        '<td class="num">'+(ed?'<input class="tinput" type="number" min="0" step="1" data-saq="'+esc(x.k)+'" value="'+(+x.qty||0)+'" style="width:92px;text-align:right">':'<b>'+fmt(+x.qty||0)+'</b>')+'</td><td class="mini">'+esc(x.note||'')+'</td><td class="mini">'+esc(fmtTime(x.at))+'<br>'+esc(x.by||'')+'</td>'+
+        (ed?'<td class="num" style="white-space:nowrap"><button class="btn sm ghost" data-saed="'+esc(x.k)+'">✎ Date / note</button> <button class="btn sm ghost" data-sadel="'+esc(x.k)+'" style="color:var(--err)">✕</button></td>':'')+'</tr>'; }).join('')+'</tbody></table></div>'
+      :'<div class="empty">No sales recorded for '+esc(day)+'.</div>');
+  body.querySelectorAll('#lcBody td img').forEach(i=>{ i.style.width='44px'; i.style.height='44px'; i.style.borderRadius='8px'; i.style.objectFit='cover'; });
+  const go=d=>{ if(!/^\d{4}-\d\d-\d\d$/.test(d)) return; salesDay=d>today?today:d; renderSales(body); };
+  $('#saPrev').onclick=()=>go(salesShift(day,-1)); $('#saNext').onclick=()=>go(salesShift(day,1)); $('#saDay').onchange=e=>go(e.target.value); const t=$('#saToday'); if(t) t.onclick=()=>go(today);
+  $$('#saStrip [data-d]').forEach(b=>b.onclick=()=>go(b.dataset.d));
+  $('#saCsv').onclick=()=>{ const rows=[['Location','Date','Product','Variation','Sold','Note','Entered','By']]; lines.forEach(x=>rows.push([locName(loc),day,x.name||'',varOf(x.variation||''),+x.qty||0,x.note||'',fmtTime(x.at),x.by||''])); csv(rows,'sales '+locName(loc)+' '+day+'.csv'); };
+  if(!ed) return;
+  const ref=k=>R.child('sales/'+loc+'/'+day+'/'+k);
+  const saveQty=async inp=>{ const k=inp.dataset.saq, old=+((SALES[day]||{})[k]||{}).qty||0; const v=inp.value.trim(); if(v===''||!/^\d+$/.test(v)||qtyBad(+v)){ inp.value=old; toast('Type a whole number','warn'); return; } const n=+v; if(n===old) return;
+    if(n===0){ if(!confirm('Remove this line from '+day+'?')){ inp.value=old; return; } await ref(k).remove(); alog('sales',{text:'removed · '+(((SALES[day]||{})[k]||{}).name||k)+' · '+day,loc}); }
+    else { await ref(k).update({qty:n,by:MY_NAME,at:Date.now()}); alog('sales',{text:(((SALES[day]||{})[k]||{}).name||k)+' · '+old+' → '+n+' · '+day,loc}); }
+    renderSales(body); };
+  $$('#lcBody [data-saq]').forEach(i=>{ i.addEventListener('change',()=>saveQty(i)); i.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); i.blur(); } }); i.addEventListener('focus',()=>i.select()); });
+  $$('#lcBody [data-sadel]').forEach(b=>b.onclick=async()=>{ const x=(SALES[day]||{})[b.dataset.sadel]||{}; if(!confirm('Remove '+(x.name||'this line')+' ('+(+x.qty||0)+') from '+day+'?')) return; await ref(b.dataset.sadel).remove(); alog('sales',{text:'removed · '+(x.name||'')+' · '+day,loc}); renderSales(body); });
+  $$('#lcBody [data-saed]').forEach(b=>b.onclick=()=>openSaleEdit(loc,day,b.dataset.saed));
+  const sc=$('#saAdd'), sg=$('#saSugg'); let rows=[];
+  const pick=p=>{ sc.value=''; sg.classList.add('hide'); openSaleAdd(loc,day,p); };
+  const sugg=()=>{ const v=sc.value.trim(); rows=v?searchProducts(v,14):[]; if(!rows.length){ sg.classList.add('hide'); return; }
+    sg.innerHTML=rows.map((p,i)=>{ const have=+(((SALES[day]||{})[fbKey(p.ikey)]||{}).qty)||0; return '<button class="mpick" data-i="'+i+'">'+img(p.image)+'<div><div class="pn">'+esc(p.name)+'</div><div class="pv">'+esc(varOf(p.variation))+'</div></div><span class="pt">'+(have?'already '+fmt(have):'')+'</span></button>'; }).join(''); sg.classList.remove('hide');
+    sg.querySelectorAll('.mpick').forEach(b=>b.onmousedown=e=>{ e.preventDefault(); pick(rows[+b.dataset.i]); }); };
+  sc.addEventListener('input',sugg); sc.addEventListener('blur',()=>setTimeout(()=>sg.classList.add('hide'),150));
+  sc.addEventListener('keydown',e=>{ if(e.key!=='Enter') return; e.preventDefault(); const v=sc.value.trim(); if(!v) return; const r=searchProducts(v,14); const bk=BC[norm(v)]||[]; if(bk.length&&INV[bk[0]]){ pick(INV[bk[0]]); return; } if(r.length===1){ pick(r[0]); return; } if(!r.length){ beep('warn'); toast('Nothing matches "'+v+'"','warn'); } });
+}
+function openSaleAdd(loc,day,p){ const k=fbKey(p.ikey), cur=(SALES[day]||{})[k];
+  const d=modal('<h2>💲 Sold · '+esc(locName(loc))+'</h2><div class="pcard">'+img(p.image,'zoomable')+'<div><div class="cn">'+esc(p.name)+'</div><div class="cv">'+esc(varOf(p.variation)||'Default')+'</div>'+(cur?'<div class="cv">already recorded for this day: <b style="color:var(--ink)">'+fmt(+cur.qty||0)+'</b> — the number below is added to it</div>':'')+'</div></div>'+
+    '<div class="row" style="gap:10px"><div class="fld" style="flex:1"><label>Date</label><input id="sxDay" type="date" class="tinput" value="'+esc(day)+'" max="'+esc(dayOf(Date.now()))+'"></div><div class="fld" style="flex:1"><label>Units sold</label><input id="sxQ" type="number" min="1" step="1" class="tinput" style="font-size:18px" value="1"></div></div>'+
+    '<div class="fld"><label>Note — optional</label><input id="sxNote" class="tinput" style="font-family:var(--body)" autocomplete="off" value="'+esc(cur?cur.note||'':'')+'"></div>'+
+    '<div class="row" style="margin-top:16px"><div class="spacer"></div><button class="btn ghost" onclick="closeModal()">Cancel</button><button class="btn primary lg" id="sxOk">Save</button></div>');
+  const q=d.querySelector('#sxQ'); let busy=false;
+  const ok=async()=>{ if(busy) return; const n=+q.value, dd=d.querySelector('#sxDay').value; if(!/^\d+$/.test(q.value.trim())||n<1||qtyBad(n)){ toast('Type how many were sold','warn'); q.focus(); return; } if(!/^\d{4}-\d\d-\d\d$/.test(dd)||dd>dayOf(Date.now())){ toast('Choose the date','warn'); return; }
+    busy=true; try{ const r=R.child('sales/'+loc+'/'+dd+'/'+k); const was=+(((await r.once('value')).val()||{}).qty)||0;
+      await r.set({item:p.ikey,name:p.name,variation:varOf(p.variation),qty:was+n,note:d.querySelector('#sxNote').value.trim(),by:MY_NAME,at:Date.now(),src:'manual'});
+      alog('sales',{text:p.name+' · +'+n+' · '+dd,loc}); beep('ok'); closeModal(); salesDay=dd; toast('Saved · '+p.name+' · '+(was+n)+' on '+dd,'ok',2400); renderCurrent(); setTimeout(()=>{ const a=$('#saAdd'); if(a) a.focus(); },80);
+    }catch(e){ busy=false; toast('Not saved: '+(e.message||e),'err',5000); } };
+  d.querySelector('#sxOk').onclick=ok; q.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); ok(); } }); setTimeout(()=>{ q.focus(); q.select(); },60);
+}
+/* change the day a line belongs to, its number or its note */
+function openSaleEdit(loc,day,k){ const x=(SALES[day]||{})[k]; if(!x) return;
+  const d=modal('<h2>✎ '+esc(x.name||'Sale')+'</h2><p class="sub">'+esc(locName(loc))+(varOf(x.variation)?' · '+esc(varOf(x.variation)):'')+'</p>'+
+    '<div class="row" style="gap:10px"><div class="fld" style="flex:1"><label>Date</label><input id="sxDay" type="date" class="tinput" value="'+esc(day)+'" max="'+esc(dayOf(Date.now()))+'"></div><div class="fld" style="flex:1"><label>Units sold</label><input id="sxQ" type="number" min="1" step="1" class="tinput" style="font-size:18px" value="'+(+x.qty||0)+'"></div></div>'+
+    '<div class="fld"><label>Note — optional</label><input id="sxNote" class="tinput" style="font-family:var(--body)" autocomplete="off" value="'+esc(x.note||'')+'"></div>'+
+    '<div class="row" style="margin-top:16px"><div class="spacer"></div><button class="btn ghost" onclick="closeModal()">Cancel</button><button class="btn primary lg" id="sxOk">Save</button></div>');
+  let busy=false; d.querySelector('#sxOk').onclick=async()=>{ if(busy) return; const qv=d.querySelector('#sxQ').value.trim(), n=+qv, dd=d.querySelector('#sxDay').value;
+    if(!/^\d+$/.test(qv)||n<1||qtyBad(n)){ toast('Type how many were sold','warn'); return; } if(!/^\d{4}-\d\d-\d\d$/.test(dd)||dd>dayOf(Date.now())){ toast('Choose the date','warn'); return; }
+    busy=true; try{ const rec=Object.assign({},x,{qty:n,note:d.querySelector('#sxNote').value.trim(),by:MY_NAME,at:Date.now()});
+      if(dd!==day){ const r2=R.child('sales/'+loc+'/'+dd+'/'+k); const there=(await r2.once('value')).val(); if(there&&!confirm(dd+' already has '+(+there.qty||0)+' of this product.\n\nAdd these '+n+' to it?')){ busy=false; return; } if(there) rec.qty=n+(+there.qty||0);
+        await r2.set(rec); await R.child('sales/'+loc+'/'+day+'/'+k).remove(); alog('sales',{text:(x.name||k)+' · moved '+day+' → '+dd+' · '+rec.qty,loc}); }
+      else { await R.child('sales/'+loc+'/'+day+'/'+k).set(rec); alog('sales',{text:(x.name||k)+' · '+(+x.qty||0)+' → '+n+' · '+day,loc}); }
+      closeModal(); toast('Saved','ok'); renderCurrent(); }catch(e){ busy=false; toast('Not saved: '+(e.message||e),'err',5000); } };
 }
 
 /* ============================================================
@@ -1151,7 +1226,8 @@ async function undoSale(id){ const s=SUBS[curGame]; const x=(s.sales||{})[id]; i
    ============================================================ */
 const SHIFT_KINDS={day:'☀️ Day shift',night:'🌙 Night shift'};
 const shiftLabel=s=>SHIFT_KINDS[s.kind]+((+s.seq||1)>1?' #'+s.seq:'');
-function openShiftAt(loc){ for(const id in SHIFTS){ const s=SHIFTS[id]; if(s&&s.loc===loc&&s.status!=='closed') return Object.assign({id},s); } return null; }
+const SHIFTS_OFF=true;   /* shifts are retired — old shift records stay in the database, the app no longer opens or shows them */
+function openShiftAt(loc){ if(SHIFTS_OFF) return null; for(const id in SHIFTS){ const s=SHIFTS[id]; if(s&&s.loc===loc&&s.status!=='closed') return Object.assign({id},s); } return null; }
 function shiftsOf(loc,day){ return Object.keys(SHIFTS).map(id=>Object.assign({id},SHIFTS[id])).filter(s=>s.loc===loc&&(!day||s.shiftDay===day)).sort((a,b)=>(a.startedAt||0)-(b.startedAt||0)); }
 /* main stock of a location (without sub-locations) at a moment */
 /* quantity of one item in a location (main stock, or a sub-location) at a moment */
@@ -1312,21 +1388,22 @@ function renderMenu(){
   const notes=[]; if(!DSOH&&DSOH_ERR) notes.push('<div class="note err">Daily SOH could not be read: '+esc(DSOH_ERR)+'</div>');
   $('#menuNotes').innerHTML=notes.join('');
 }
-function openLoc(id){ if(!canLoc(id)){ toast('Your role has no access to '+locName(id),'warn'); return; } curLoc=id; lcTab=(LOC_BY_ID[id]||{}).kind==='stream'?'shift':'stock'; lcQ=''; expandedSub=null; show('loc'); renderLoc(); }
+function openLoc(id){ if(!canLoc(id)){ toast('Your role has no access to '+locName(id),'warn'); return; } curLoc=id; lcTab='stock'; lcQ=''; expandedSub=null; show('loc'); renderLoc(); }
 let expandedSub=null;
 function renderLoc(){
   const l=LOC_BY_ID[curLoc]; if(!l){ show('menu'); return; }
   $('#lcTitle').textContent=l.icon+' '+l.name; const tot=totalsAt(curLoc); $('#lcItems').textContent=Object.keys(tot).filter(k=>tot[k]).length; $('#lcUnits').textContent=fmt(unitsOf(tot));
   $('#lcCount').classList.toggle('hide',curLoc==='warehouse'); { const cs=CSESS[fbKey(curLoc)], b=$('#lcCount'); b.textContent=cs?'🔢 Continue count · since '+hhmm(cs.startedAt):'🔢 Count'; b.classList.toggle('warn',!!cs); b.title=cs?'A count started by '+(cs.by||'someone')+' is in progress':''; } $('#lcReq').classList.toggle('hide',curLoc==='warehouse'); $('#lcReq').onclick=()=>openTransferRequest(curLoc); $('#lcNewSub').classList.toggle('hide',curLoc==='warehouse'); $('#lcGame').classList.toggle('hide',l.kind==='warehouse'||l.kind==='show'||!canPlanGame()); $('#lcCountHist').classList.toggle('hide',curLoc==='warehouse'); if(isStreamer()){ $('#lcCount').classList.add('hide'); $('#lcCountHist').classList.add('hide'); $('#lcNewSub').classList.add('hide'); }
-  const strm=isStreamer(); ['days','log'].forEach(t=>$('#lcTabs [data-t="'+t+'"]').classList.toggle('hide',strm)); if(strm&&(lcTab==='days'||lcTab==='log')) lcTab=l.kind==='stream'?'shift':'stock';
-  $('#lcTabs [data-t="shift"]').classList.toggle('hide',l.kind!=='stream'); if(lcTab==='shift'&&l.kind!=='stream') lcTab='stock';
+  const strm=isStreamer(); ['days','log'].forEach(t=>$('#lcTabs [data-t="'+t+'"]').classList.toggle('hide',strm)); if(strm&&(lcTab==='days'||lcTab==='log')) lcTab='stock';
+  $('#lcTabs [data-t="shift"]').classList.add('hide'); if(lcTab==='shift') lcTab='stock';   /* shifts are retired: streamers no longer scan sales in the app */
+  $('#lcTabs [data-t="sales"]').classList.toggle('hide',l.kind!=='stream'); if(lcTab==='sales'&&l.kind!=='stream') lcTab='stock';
   $('#lcTabs [data-t="subs"]').textContent=l.id===SLAB_LOC?'🪪 Slabs':(l.kind==='stream'||PLAN_LOCS.includes(l.id))?'🎲 Games':l.kind==='show'?'🚐 Shows':'🧺 Sub-locations';
   if(l.id===SLAB_LOC){ $('#lcNewSub').classList.add('hide'); $('#lcGame').classList.add('hide'); }
   $$('#lcTabs button').forEach(b=>b.classList.toggle('on',b.dataset.t===lcTab));
   /* drop targets: other locations + sub-locations here */
   $('#lcDrop').innerHTML=''; $('#lcDrop').classList.add('hide');
   const body=$('#lcBody');
-  if(lcTab==='shift') renderShift(body); else if(lcTab==='stock') renderStock(body); else if(lcTab==='subs'){ if(curLoc===SLAB_LOC) renderSlabs(body); else renderSubs(body); } else if(lcTab==='days') renderDays(body); else renderLocLog(body);
+  if(lcTab==='sales') renderSales(body); else if(lcTab==='stock') renderStock(body); else if(lcTab==='subs'){ if(curLoc===SLAB_LOC) renderSlabs(body); else renderSubs(body); } else if(lcTab==='days') renderDays(body); else renderLocLog(body);
 }
 /* the rooms a product or a whole game can be dragged onto — shown in the places where games are built */
 function dropSideHTML(what){ if(!PLAN_LOCS.includes(curLoc)||isStreamer()) return '';
@@ -1377,8 +1454,7 @@ function renderStreamerGames(body){ const loc=curLoc; const shOpen=shiftOpenIn(l
     const keys=Object.keys(items).filter(k=>+items[k]).sort((a,b)=>itemInfo(a).name.localeCompare(itemInfo(b).name));
     return '<div class="subcard"'+(isPast?' style="opacity:.75"':'')+'><div class="sh" data-gexp="'+g.id+'" style="cursor:pointer"><span class="sn">🎲 '+esc(g.name)+'</span><span class="gstat '+st+'">'+st+'</span><span class="pill">'+(start?'start <b>'+fmt(start)+'</b> · sold <b>'+fmt(sold)+'</b> · left <b>':'units <b>')+fmt(unitsOf(items))+'</b></span><span class="pill">'+Object.keys(g.bundles||{}).length+' bundle(s)</span><div class="spacer"></div>'+(isPast?'<button class="btn sm ghost" data-subhist="'+g.id+'">🕘 History</button>':'')+'<span class="mini">'+(on?'▾':'▸')+'</span></div>'+
       (on?'<div class="list" style="margin-top:8px">'+(keys.length?keys.map(k=>rowHTML(k,items[k],0,'sub:'+g.id)).join(''):'<div class="empty" style="padding:14px">Empty.</div>')+'</div>':'')+'</div>'; };
-  body.innerHTML=(shOpen?'<div class="note info" style="margin:0 0 12px">To start or sell a game, use <b>🎲 Game</b> on the <b>Shift</b> tab.</div>':'<div class="note" style="margin:0 0 12px">A game can only be started during a stream — start the shift on the <b>Shift</b> tab first. Here you can look at what is planned for this room.</div>')+
-    (cur.length?cur.map(g=>card(g,false)).join(''):'<div class="empty">No current or planned games in '+esc(locName(loc))+'. Games are planned in the Stockroom and moved here whole.</div>')+
+  body.innerHTML=(cur.length?cur.map(g=>card(g,false)).join(''):'<div class="empty">No current or planned games in '+esc(locName(loc))+'. Games are planned in the Stockroom and moved here whole.</div>')+
     '<div style="margin-top:20px;text-align:center"><button class="btn ghost" id="sgPast">'+(showPastGames?'▴ Hide past games':'🕘 Show past games ('+past.length+')')+'</button></div>'+
     (showPastGames?(past.length?'<h2 style="margin-top:14px">Past games</h2>'+past.map(g=>card(g,true)).join(''):'<p class="mini" style="text-align:center">No past games here.</p>'):'');
   body.querySelectorAll('[data-gexp]').forEach(h=>h.onclick=e=>{ if(e.target.closest('button')) return; expandedSub=expandedSub===h.dataset.gexp?null:h.dataset.gexp; renderStreamerGames(body); });
@@ -1545,7 +1621,7 @@ $('#camClose').onclick=closeCam;
 function renderCurrent(){ if(!MY_NAME) return; if((screen==='disc'||screen==='history'||screen==='import')&&!isAdmin()){ goMenu(); return; } if(screen==='menu') renderMenu(); else if(screen==='loc') renderLoc(); else if(screen==='overview') renderOverview(); else if(screen==='disc') renderDisc(); else if(screen==='history') renderHistory(); else if(screen==='game') renderGame(); else if(screen==='import') renderImport(); }
 function goMenu(){ show('menu'); renderMenu(); }
 /* links from other apps: #loc/<id>/<tab> · #game/<subId> */
-function applyHash(){ if(!MY_NAME) return; const m=/^#loc\/([a-z0-9]+)(?:\/(stock|subs|days|log))?$/.exec(location.hash||''); if(m&&LOC_BY_ID[m[1]]){ openLoc(m[1]); if(m[2]){ lcTab=m[2]; renderLoc(); } return; } const g=/^#game\/(.+)$/.exec(location.hash||''); if(g&&SUBS[decodeURIComponent(g[1])]) openGame(decodeURIComponent(g[1]),'menu'); }
+function applyHash(){ if(!MY_NAME) return; const m=/^#loc\/([a-z0-9]+)(?:\/(stock|subs|sales|days|log))?$/.exec(location.hash||''); if(m&&LOC_BY_ID[m[1]]){ openLoc(m[1]); if(m[2]){ lcTab=m[2]; renderLoc(); } return; } const g=/^#game\/(.+)$/.exec(location.hash||''); if(g&&SUBS[decodeURIComponent(g[1])]) openGame(decodeURIComponent(g[1]),'menu'); }
 window.addEventListener('hashchange',applyHash);
 $('#homeBtn').onclick=goMenu; $('#lcBack').onclick=goMenu; $('#ovBack').onclick=goMenu; $('#dcBack').onclick=goMenu; $('#hsBack').onclick=goMenu;
 
