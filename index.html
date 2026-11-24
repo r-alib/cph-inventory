@@ -263,7 +263,7 @@ td.editable{cursor:pointer} td.editable:hover{background:#1a2338;box-shadow:inse
      packstation/transfers           → ready transfers become ledger events
    Day boundaries: calendar days (local time). Streamer rooms: day = day shift + night shift (build 3).
    ============================================================ */
-const BUILD='2026-11-24f · games: Stockroom + Game Area as one place · bulk move · reopen closed games';
+const BUILD='2026-11-24h · Stockroom / Game Area see the games of every room';
 const INV_CONFIG={apiKey:"AIzaSyAsTYwU0qABmXKuYSpyendwHw3djJc-Bqo",authDomain:"calipoke-inventory.firebaseapp.com",databaseURL:"https://calipoke-inventory-default-rtdb.firebaseio.com",projectId:"calipoke-inventory",storageBucket:"calipoke-inventory.firebasestorage.app",messagingSenderId:"156640764541",appId:"1:156640764541:web:833f96e4b0849b53454714"};
 const STATION_CONFIG={apiKey:"AIzaSyB2I2sR9czF6F29OZMyEZubmwQGP7nWFlc",authDomain:"calipoke-packstation.firebaseapp.com",databaseURL:"https://calipoke-packstation-default-rtdb.firebaseio.com",projectId:"calipoke-packstation",storageBucket:"calipoke-packstation.firebasestorage.app",messagingSenderId:"125288117157",appId:"1:125288117157:web:461b4d553e100c07b9ae4c"};
 const ROOT='inv', STATION_PATH='packstation';
@@ -312,7 +312,7 @@ const fmtTime=ts=>{ if(!ts) return '—'; const d=new Date(ts); return pad2(d.ge
 const varOf=v=>(v&&norm(v)!=='default')?v:'';
 const PLACEHOLDER='data:image/svg+xml;utf8,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" rx="10" fill="#222936"/><text x="32" y="40" font-size="24" text-anchor="middle" fill="#5A6472">📦</text></svg>');
 const img=(src,cls)=>'<img class="'+(cls||'')+'" src="'+esc(src||PLACEHOLDER)+'" loading="lazy" alt="" onerror="this.src=\''+PLACEHOLDER+'\'">';
-const locName=id=>{ if(!id) return '—'; if(id.startsWith('sub:')){ const s=SUBS[id.slice(4)]; return s?('🧺 '+s.name):'sub'; } return (LOC_BY_ID[id]||{}).name||id; };
+const locName=id=>{ if(!id) return '—'; if(id.startsWith('sub:')){ const s=SUBS[id.slice(4)]; return s?('🧺 '+s.name):(DELNAMES[id.slice(4)]?'🗑 '+DELNAMES[id.slice(4)]:'deleted game'); } return (LOC_BY_ID[id]||{}).name||id; };
 const isSub=id=>!!id&&id.startsWith('sub:');
 const subOf=id=>SUBS[String(id||'').slice(4)]||null;
 
@@ -403,6 +403,7 @@ function connect(){
   R.child('slabCounts').on('value',s=>{ SLAB_COUNTS=s.val()||{}; });
   R.child('countSessions').on('value',s=>{ CSESS=s.val()||{}; renderCurrent(); });
   R.child('boxes').on('value',s=>{ BOXES=s.val()||{}; renderCurrent(); });
+  R.child('deletedSubs').on('value',s=>{ DELNAMES=s.val()||{}; });
   R.child('bundleDefs').on('value',s=>{ BDEFS=s.val()||{}; if(screen==='bundles'&&!_modal) renderBundles(); });
   R.child('catalog').on('value',s=>{ CUSTOM={}; const v=s.val()||{}; for(const fk in v){ const c=v[fk]; if(c&&c.ikey) CUSTOM[c.ikey]=c; } setInventory(null); });
   R.child('shifts').on('value',s=>{ SHIFTS=s.val()||{}; renderCurrent(); });
@@ -571,6 +572,31 @@ async function returnSubAll(id){ const s=SUBS[id]; if(!s) return; const items=s.
   { const snap={}; for(const k in items) if(+items[k]) snap[k]=+items[k]; await R.child('subs/'+id).update({closedItems:Object.keys(snap).length?snap:null,prevStatus:s.status||null}); }   /* what it looked like when it was closed — used by Reopen */
   for(const k in items){ if(+items[k]) await postEvent({item:k,qty:Math.abs(+items[k]),from:+items[k]>0?'sub:'+id:H,to:+items[k]>0?H:'sub:'+id,kind:'sub',note:'return all · '+s.name}); }
   await R.child('subs/'+id).update({status:'closed',closedAt:Date.now(),closedBy:MY_NAME,returnedTo:H}); await R.child('subs/'+id+'/log').push({at:Date.now(),by:MY_NAME,text:'everything returned to '+locName(H)+' · closed'}); toast('"'+s.name+'" returned to '+locName(H)+' and closed','ok'); }
+/* ---- ADMIN: delete a game / display completely (test games). What is still inside goes back to the shelf first;
+   its sales can be undone too (the sold units are put back), so a test leaves no trace in the stock.
+   The movements already made stay in the history, marked with the deleted name. ---- */
+let DELNAMES={};
+async function deleteSubs(ids,undoSales){ let back=0, undone=0, n=0;
+  for(const id of ids){ const s=SUBS[id]; if(!s) continue; const H=gameHome(s), items=s.items||{};
+    for(const k in items){ const q=+items[k]||0; if(!q) continue; await postEvent({item:INV_FB[k]||k,qty:Math.abs(q),from:q>0?'sub:'+id:H,to:q>0?H:'sub:'+id,kind:'sub',note:'deleted · '+s.name}); back+=Math.abs(q); }
+    if(undoSales){ const sold=s.sold||{}; for(const k in sold){ const q=+sold[k]||0; if(q>0){ await postEvent({item:INV_FB[k]||k,qty:q,from:null,to:H,kind:'adjust',note:'test game deleted · sale undone · '+s.name}); undone+=q; } } }
+    await R.child('deletedSubs/'+id).set(s.name||'game'); DELNAMES[id]=s.name||'game';
+    await R.child('subs/'+id).remove(); delete SUBS[id]; alog('sub_delete',{text:s.name+(undoSales?' · sales undone':''),loc:s.at,ref:id}); n++; }
+  return {n,back,undone}; }
+function askDeleteSubs(ids,after){ if(!isAdmin()) return; ids=ids.filter(id=>SUBS[id]); if(!ids.length) return; const list=ids.map(id=>SUBS[id]);
+  const inside=list.reduce((a,s)=>a+unitsOf(s.items||{}),0), sold=list.reduce((a,s)=>a+unitsOf(s.sold||{}),0), live=list.filter(s=>gameStatus(s)==='live');
+  const d=modal('<h2 style="color:var(--err)">🗑 Delete '+(ids.length===1?'“'+esc(list[0].name)+'”':ids.length+' games / displays')+'</h2><p class="sub" style="font-size:13.5px">Deleted completely — it disappears from the lists and from the closed history. This cannot be undone.</p>'+
+    (ids.length>1?'<div class="mini" style="max-height:120px;overflow:auto;margin:6px 0">'+list.map(s=>esc(s.name)).join(' · ')+'</div>':'')+
+    (live.length?'<p style="color:var(--warn)">⚠ '+live.map(s=>esc(s.name)).join(', ')+' '+(live.length===1?'is':'are')+' LIVE right now.</p>':'')+
+    (inside?'<p>'+fmt(inside)+' unit(s) still inside go back to '+esc([...new Set(list.map(s=>locName(gameHome(s))))].join(' / '))+' first.</p>':'')+
+    (sold?'<label style="display:flex;gap:10px;align-items:flex-start;margin-top:8px;cursor:pointer"><input type="checkbox" id="delUndo" checked style="width:18px;height:18px;margin-top:2px;accent-color:var(--accent)"><span><b>Undo its sales</b> — put the '+fmt(sold)+' sold unit(s) back on the shelf<div class="mini">Untick for a real game whose sales really happened.</div></span></label>':'')+
+    '<div class="fld" style="margin-top:12px"><label>Type DELETE to confirm</label><input id="delTxt" class="tinput" autocomplete="off" style="max-width:200px"></div>'+
+    '<div class="row" style="margin-top:14px"><div class="spacer"></div><button class="btn ghost" id="delX">Cancel</button><button class="btn danger" id="delGo" disabled>🗑 Delete</button></div>');
+  const t=d.querySelector('#delTxt'), go=d.querySelector('#delGo'); t.addEventListener('input',()=>{ go.disabled=t.value.trim().toUpperCase()!=='DELETE'; }); setTimeout(()=>t.focus(),50);
+  d.querySelector('#delX').onclick=closeModal; let busy=false;
+  go.onclick=async()=>{ if(busy) return; busy=true; go.disabled=true; go.textContent='Deleting…'; const u=d.querySelector('#delUndo');
+    try{ const r=await deleteSubs(ids,!!(u&&u.checked)); closeModal(); toast('Deleted '+r.n+(r.back?' · '+fmt(r.back)+' unit(s) back on the shelf':'')+(r.undone?' · '+fmt(r.undone)+' sold unit(s) put back':''),'ok',4000); if(after) after(); else renderCurrent(); }
+    catch(e){ busy=false; toast('Not deleted: '+(e.message||e),'err',5000); go.textContent='🗑 Delete'; } }; }
 /* ---- reopen a closed game / display. It comes back exactly as it was closed: same start, sold and history.
    The leftovers were returned to the shelf when it was closed; they can stay there (reopen only to correct the
    numbers) or be taken back into the game. ---- */
@@ -1168,7 +1194,7 @@ function renderGame(){
   if(st!=='closed'&&!live&&unitsOf(items)&&!strm) acts.push('<button class="btn sm" id="gmCount" title="Count what is physically in the game and compare with the system">🔢 Count leftovers</button>');
   if(isAdmin()&&st!=='closed') acts.push('<button class="btn sm ghost" id="gmAdmAdd" title="Admin: put any product into the game as a correction">✎ Add (admin)</button>');
   if(st==='closed'&&!strm) acts.push('<button class="btn" id="gmReopen">↺ Reopen</button>');
-  acts.push('<button class="btn ghost sm" id="gmHist">🕘</button>');
+  acts.push('<button class="btn ghost sm" id="gmHist">🕘</button>'); if(isAdmin()) acts.push('<button class="btn ghost sm" id="gmDel" title="Delete the game completely" style="color:var(--err)">🗑</button>');
   const roomShift=inStream?openShiftAt(s.at):null; if(roomShift&&roomShift.status==='open') acts.push('<button class="btn danger" id="gmEndShift" title="End '+shiftLabel(roomShift)+' in '+esc(locName(s.at))+'">■ End shift</button>');
   $('#gmActs').innerHTML=acts.join('');
   const keys=Object.keys(items).filter(k=>+items[k]||start[k]||sold[k]).sort((a,b)=>itemInfo(a).name.localeCompare(itemInfo(b).name)); const q=norm(gmQ);
@@ -1198,7 +1224,7 @@ function renderGame(){
   const rt=g('#gmRet'); if(rt) rt.onclick=()=>returnSubAll(curGame);
   const gc=g('#gmCount'); if(gc) gc.onclick=()=>openCount('sub:'+curGame,{title:'🔢 Count leftovers · '+s.name,intro:'Scan what is physically left in the game. If the count differs from the system, the difference is recorded — usually a sale that was not scanned.'});
   const ga=g('#gmAdmAdd'); if(ga) ga.onclick=()=>openAddItem('sub:'+curGame);
-  g('#gmHist').onclick=()=>openSubHistory(curGame); { const ro=g('#gmReopen'); if(ro) ro.onclick=()=>openReopen(curGame); }
+  g('#gmHist').onclick=()=>openSubHistory(curGame); { const ro=g('#gmReopen'); if(ro) ro.onclick=()=>openReopen(curGame); } { const gd=g('#gmDel'); if(gd) gd.onclick=()=>askDeleteSubs([curGame],()=>{ if(curLoc){ show('loc'); lcTab='subs'; renderLoc(); } else goMenu(); }); }
   $$('#gmTabs [data-gt]').forEach(b=>b.onclick=()=>{ gmTab=b.dataset.gt; renderGame(); });
   const fq=$('#gmQ'); fq.addEventListener('input',()=>{ gmQ=fq.value; const p=fq.selectionStart; renderGame(); const n=$('#gmQ'); n.focus(); try{ n.setSelectionRange(p,p); }catch(e){} });
   $$('#gmList [data-sell]').forEach(b=>b.onclick=()=>askSell(b.dataset.sell)); $$('#gmBody [data-sellb]').forEach(b=>b.onclick=()=>askSellBundle(b.dataset.sellb));
@@ -1513,7 +1539,7 @@ async function grSetBundle(bid,val){ const s=SUBS[curGame]; if(!s||grBusy) retur
     toast('🧩 '+b.name+' · sold '+fmt(n),'ok',1600); }catch(e){ toast('Not saved: '+(e.message||e),'err',5000); } grBusy=false; renderGame(); }
 function renderGameReport(s,st){ const sid='sub:'+curGame; const items=s.items||{}, sold=s.sold||{}, bundles=s.bundles||{}; const started=unitsOf(s.start||{})>0; const start=started?s.start:items; const live=st==='live', closed=st==='closed'; const H=gameHome(s), HN=esc(locName(H));
   $('#gmTitle').textContent='🎲 '+s.name; const gs=$('#gmStat'); gs.className='gstat '+st; gs.textContent=st;
-  $('#gmActs').innerHTML=(closed&&!isStreamer()?'<button class="btn" id="gmReopen">↺ Reopen</button>':'')+'<button class="btn ghost sm" id="gmHist">🕘</button>'; { const ro=$('#gmReopen'); if(ro) ro.onclick=()=>openReopen(curGame); }
+  $('#gmActs').innerHTML=(closed&&!isStreamer()?'<button class="btn" id="gmReopen">↺ Reopen</button>':'')+'<button class="btn ghost sm" id="gmHist">🕘</button>'+(isAdmin()?'<button class="btn ghost sm" id="gmDel" title="Delete the game completely" style="color:var(--err)">🗑</button>':''); { const ro=$('#gmReopen'); if(ro) ro.onclick=()=>openReopen(curGame); } { const gd=$('#gmDel'); if(gd) gd.onclick=()=>askDeleteSubs([curGame],()=>{ if(curLoc){ show('loc'); lcTab='subs'; renderLoc(); } else goMenu(); }); }
   const keys=Object.keys(Object.assign({},start,items,sold)).filter(k=>+start[k]||+items[k]||+sold[k]).sort((a,b)=>itemInfo(a).name.localeCompare(itemInfo(b).name)); const resv=bundleReserved(s);
   const left=unitsOf(items); const q=norm(gmQ);
   const lastCount=countsOf(sid)[0];
@@ -1747,8 +1773,8 @@ function renderLoc(){
 /* the rooms a product or a whole game can be dragged onto — shown in the places where games are built */
 function dropSideHTML(what){ if(!PLAN_LOCS.includes(curLoc)||isStreamer()) return '';
   const rooms=LOCS.filter(x=>x.id!==curLoc&&x.id!=='warehouse'&&(what==='product'||x.kind!=='show'));
-  const here=what==='product'?Object.keys(SUBS).filter(id=>SUBS[id].status!=='closed'&&(SUBS[id].at===curLoc||(SUBS[id].kind==='game'&&planPool(curLoc).includes(SUBS[id].at)))).map(id=>Object.assign({id},SUBS[id])):[];
-  return '<aside class="dropside"><div class="mini" style="margin-bottom:8px">'+(what==='game'?'Drag a game onto a room to move it there whole:':'Drag a product onto:')+'</div>'+rooms.map(x=>{ const gl=what==='game'?subsAt(x.id).filter(z=>z.kind==='game'):[]; return '<span class="chip" data-drop="'+x.id+'">'+x.icon+' '+esc(x.name)+(gl.length?' <span class="mini">· '+gl.length+'</span>':'')+'</span>'+
+  const here=what==='product'?Object.keys(SUBS).filter(id=>SUBS[id].status!=='closed'&&!(SUBS[id].kind==='game'&&gameStatus(SUBS[id])==='ended')&&(SUBS[id].at===curLoc||(SUBS[id].kind==='game'&&planPool(curLoc).includes(SUBS[id].at)))).map(id=>Object.assign({id},SUBS[id])):[];
+  return '<aside class="dropside"><div class="mini" style="margin-bottom:8px">'+(what==='game'?'Drag a game onto a room to move it there whole. Under each room: its open games — click to open.':'Drag a product onto a room or a game here. Under each room: its open games — click to open.')+'</div>'+rooms.map(x=>{ const gl=subsAt(x.id).filter(z=>z.kind==='game'&&gameStatus(z)!=='ended').filter(z=>!(what==='product'&&planPool(curLoc).includes(z.at))); return '<span class="chip" data-drop="'+x.id+'">'+x.icon+' '+esc(x.name)+(gl.length?' <span class="mini">· '+gl.length+'</span>':'')+'</span>'+
         gl.map(z=>'<span class="chip sub" data-gosub="'+z.id+'" style="margin-left:14px;cursor:pointer" title="Open '+esc(z.name)+'">'+subIcon(z)+' '+esc(z.name)+' <span class="mini">›</span></span>').join(''); }).join('')+
     (here.length?'<div class="mini" style="margin:10px 0 6px">Games &amp; displays here — click to open:</div>'+here.map(s=>'<span class="chip sub" data-drop="sub:'+s.id+'" data-gosub="'+s.id+'" style="cursor:pointer" title="Open '+esc(s.name)+' · or drag a product onto it">'+subIcon(s)+' '+esc(s.name)+' <span class="mini">›</span></span>').join(''):'')+'</aside>'; }
 const subIcon=s=>s.kind==='game'?'🎲':s.kind==='display'?'🪟':s.kind==='show'?'🚐':'🧺';
@@ -1796,11 +1822,14 @@ function rowHTML(k,qty,reserved,loc,held,sel){ const it=itemInfo(k); const at=lo
 function wireRows(sel,loc){ $$(sel+' [data-open]').forEach(b=>b.onclick=()=>openBoxAt(loc,b.dataset.open)); $$(sel+' [data-tr]').forEach(b=>b.onclick=()=>openTransfer(b.dataset.tr,loc)); $$(sel+' [data-adj]').forEach(b=>b.onclick=()=>openAdjust(b.dataset.adj,loc)); }
 function renderSubs(body){ if(isStreamer()){ renderStreamerGames(body); return; }
   const dOnly=lcTab==='disp'; const mine=x=>dOnly?x.kind==='display':x.kind!=='display';   /* Displays have their own tab */
-  const pool=planPool(curLoc), inPool=x=>x.at===curLoc||(x.kind==='game'&&pool.includes(x.at));   /* games built in the Stockroom or the Game Area are listed in both */
-  const subs=Object.keys(SUBS).filter(id=>SUBS[id].status!=='closed'&&inPool(SUBS[id])).map(id=>Object.assign({id},SUBS[id])).filter(mine); const closed=Object.keys(SUBS).filter(id=>SUBS[id].status==='closed'&&mine(SUBS[id])&&(SUBS[id].returnedTo===curLoc||inPool(SUBS[id])||(SUBS[id].kind==='game'&&pool.includes(SUBS[id].returnedTo)))).map(id=>Object.assign({id},SUBS[id])).sort((a,b)=>(b.closedAt||0)-(a.closedAt||0)).slice(0,20);
+  const pool=planPool(curLoc), allG=PLAN_LOCS.includes(curLoc), inPool=x=>x.at===curLoc||(x.kind==='game'&&(allG||pool.includes(x.at)));   /* the Stockroom and the Game Area see the games of every room */   /* games built in the Stockroom or the Game Area are listed in both */
+  const subs=Object.keys(SUBS).filter(id=>SUBS[id].status!=='closed'&&inPool(SUBS[id])).map(id=>Object.assign({id},SUBS[id])).filter(mine); const closed=Object.keys(SUBS).filter(id=>SUBS[id].status==='closed'&&mine(SUBS[id])&&(SUBS[id].returnedTo===curLoc||inPool(SUBS[id])||(SUBS[id].kind==='game'&&(allG||pool.includes(SUBS[id].returnedTo))))).map(id=>Object.assign({id},SUBS[id])).sort((a,b)=>(b.closedAt||0)-(a.closedAt||0)).slice(0,allG?40:20);
   const open=subs.find(s=>s.id===expandedSub); const side=dOnly?'':dropSideHTML('game'), gm=PLAN_LOCS.includes(curLoc);
   body.innerHTML=(side?'<div class="withside">'+side+'<div class="mainside">':'')+(subs.length?'<p class="mini" style="margin:0 0 8px">Tap a tile to see what is inside. '+(dOnly?'':side?'Drag a tile onto a room on the left to move the whole game there.':'Use “Move whole sub to…” inside the tile to move it.')+'</p><div class="stiles">'+subs.map(s=>stileHTML(s)).join('')+'</div>':'<div class="empty">'+(dOnly?'No displays in '+esc(locName(curLoc))+' yet. Press <b>🪟 New display</b> to set sample products aside for the stream.':gm?'No games here yet. Press <b>🎲 Plan a game</b> to build one — it appears here and can be dragged onto a room.':'No sub-locations here. Create one for a game or a show, then move products into it.')+'</div>')+(open?subHTML(open):'')+
-    (closed.length?'<h2 style="margin-top:22px">Closed</h2>'+closed.map(s=>'<div class="subcard" style="opacity:.7"><div class="sh"><span class="sn">'+esc(s.name)+'</span><span class="badge muted">closed '+esc(fmtTime(s.closedAt))+'</span>'+(unitsOf(s.start||{})?'<span class="pill">start <b>'+fmt(unitsOf(s.start))+'</b> · sold <b>'+fmt(unitsOf(s.sold||{}))+'</b></span>':'')+'<div class="spacer"></div>'+(s.kind==='game'?'<button class="btn sm ghost" data-gopen="'+s.id+'">👁 View</button>':'')+'<button class="btn sm" data-reopen="'+s.id+'">↺ Reopen</button><button class="btn sm ghost" data-subhist="'+s.id+'">🕘 History</button></div></div>').join(''):'')+(side?'</div></div>':'');
+    (closed.length?'<div class="row" style="margin-top:22px;align-items:center"><h2 style="margin:0">Closed</h2><div class="spacer"></div>'+(isAdmin()?'<label class="mini" style="display:flex;gap:6px;align-items:center;cursor:pointer"><input type="checkbox" id="clAll" style="width:17px;height:17px;accent-color:var(--err)"> select all</label><button class="btn sm danger" id="clDel" disabled>🗑 Delete selected</button>':'')+'</div>'+closed.map(s=>'<div class="subcard" style="opacity:.7"><div class="sh">'+(isAdmin()?'<input type="checkbox" class="clchk" data-cl="'+s.id+'" style="width:18px;height:18px;accent-color:var(--err)">':'')+'<span class="sn">'+esc(s.name)+'</span><span class="badge muted">closed '+esc(fmtTime(s.closedAt))+'</span>'+(unitsOf(s.start||{})?'<span class="pill">start <b>'+fmt(unitsOf(s.start))+'</b> · sold <b>'+fmt(unitsOf(s.sold||{}))+'</b></span>':'')+'<div class="spacer"></div>'+(s.kind==='game'?'<button class="btn sm ghost" data-gopen="'+s.id+'">👁 View</button>':'')+'<button class="btn sm" data-reopen="'+s.id+'">↺ Reopen</button><button class="btn sm ghost" data-subhist="'+s.id+'">🕘 History</button>'+(isAdmin()?'<button class="btn sm ghost" data-subdel="'+s.id+'" title="Delete completely" style="color:var(--err)">🗑</button>':'')+'</div></div>').join(''):'')+(side?'</div></div>':'');
+  { const cd=$('#clDel'), ca=$('#clAll'), sel=()=>$$('#lcBody .clchk').filter(c=>c.checked).map(c=>c.dataset.cl); const upd=()=>{ if(cd){ const n=sel().length; cd.disabled=!n; cd.textContent='🗑 Delete selected'+(n?' ('+n+')':''); } };
+    $$('#lcBody .clchk').forEach(c=>c.onchange=upd); if(ca) ca.onchange=()=>{ $$('#lcBody .clchk').forEach(c=>c.checked=ca.checked); upd(); }; if(cd) cd.onclick=()=>askDeleteSubs(sel()); }
+  $$('#lcBody [data-subdel]').forEach(b=>b.onclick=()=>askDeleteSubs([b.dataset.subdel]));
   $$('#lcBody [data-reopen]').forEach(b=>b.onclick=()=>openReopen(b.dataset.reopen));
   $$('#lcBody [data-stile]').forEach(t=>t.onclick=e=>{ if(e.target.closest('button,select')) return; expandedSub=expandedSub===t.dataset.stile?null:t.dataset.stile; renderSubs(body); const el=$('#lcBody .subcard'); if(el) el.scrollIntoView({behavior:'smooth',block:'nearest'}); });
   subs.forEach(s=>{ const items=s.items||{}; const keys=Object.keys(items).filter(k=>items[k]).sort((a,b)=>itemInfo(a).name.localeCompare(itemInfo(b).name)); const host=body.querySelector('[data-sublist="'+s.id+'"]'); if(host) host.innerHTML=keys.length?keys.map(k=>rowHTML(k,items[k],0,'sub:'+s.id)).join(''):'<div class="empty" style="padding:16px">'+(s.kind==='display'?'Empty — press <b>＋ Add products</b>.':'Empty — drag products here from the Stock tab.')+'</div>'; wireRows('[data-sublist="'+s.id+'"]','sub:'+s.id); });
@@ -1838,7 +1867,7 @@ function subHTML(s){ const items=s.items||{}; const u=unitsOf(items); const sold
     (g?'<button class="btn sm'+(st==='live'?' primary':'')+'" data-gopen="'+s.id+'">'+(st==='live'?'💲 Sell':'🎲 Open game')+'</button>':'')+(g&&(st==='ready'||st==='ended')&&(LOC_BY_ID[s.at]||{}).kind==='stream'?'<button class="btn sm primary" data-gstart="'+s.id+'">▶ Start game</button>':'')+
     '<select class="sel" data-submove="'+s.id+'" style="min-width:150px"><option value="">Move whole '+(g?'game':s.kind==='display'?'display':'sub')+' to…</option>'+LOCS.filter(l=>l.id!==s.at&&l.id!=='warehouse'&&(l.kind!=='show'||s.kind==='show')).map(l=>'<option value="'+l.id+'">'+l.icon+' '+esc(l.name)+'</option>').join('')+'</select>'+
     (s.kind==='display'?'<button class="btn sm primary" data-dispadd="'+s.id+'">＋ Add products</button><button class="btn sm" data-dispbundle="'+s.id+'">🧩 Add bundle</button>':'')+
-    ((s.at===gameHome(s)||s.kind==='display')?'<button class="btn sm warn" data-subret="'+s.id+'">↩ Return all to '+esc(locName(gameHome(s)))+'</button>':'')+'<button class="btn sm ghost" data-subhist="'+s.id+'">🕘</button></div>'+
+    ((s.at===gameHome(s)||s.kind==='display')?'<button class="btn sm warn" data-subret="'+s.id+'">↩ Return all to '+esc(locName(gameHome(s)))+'</button>':'')+'<button class="btn sm ghost" data-subhist="'+s.id+'">🕘</button>'+(isAdmin()?'<button class="btn sm ghost" data-subdel="'+s.id+'" title="Delete completely" style="color:var(--err)">🗑</button>':'')+'</div>'+
     (s.kind==='display'?'<p class="mini" style="margin:8px 0 0">Samples set aside to show on stream. They are not part of the stock of '+esc(locName(s.at))+' until they are returned — ↩ on a line returns that product.</p>':'')+'<div class="list" data-sublist="'+s.id+'"></div></div>'; }
 function openSubHistory(id){ const s=SUBS[id]; const evs=LEDGER.filter(e=>e.from==='sub:'+id||e.to==='sub:'+id); const log=Object.values(s.log||{});
   modal('<h2>🧺 '+esc(s.name)+'</h2><p class="sub" style="font-size:13px">'+esc(s.kind)+' · created '+esc(fmtTime(s.createdAt))+' by '+esc(s.createdBy||'')+(s.closedAt?' · closed '+esc(fmtTime(s.closedAt)):'')+' · now in '+esc(locName(s.at))+'</p>'+
