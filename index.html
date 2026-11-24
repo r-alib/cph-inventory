@@ -135,6 +135,17 @@ td.editable{cursor:pointer} td.editable:hover{background:#1a2338;box-shadow:inse
 .irow .q3{display:flex;gap:10px;font-family:var(--mono);font-size:12px;color:var(--muted)} .irow .q3 b{display:block;font-size:17px;color:var(--ink)}
 .chipsel{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0} .chipsel .chip.on{border-color:var(--accent);background:#11211a}
 @media (max-width:640px){ .irow{grid-template-columns:48px 1fr auto} .irow .acts{grid-column:1/-1;justify-content:flex-end} .irow img{width:48px;height:48px} .tiles{grid-template-columns:1fr} }
+/* bundle barcode label · 2.25 × 1.25 in */
+#printArea{position:fixed;left:-10000px;top:0;visibility:hidden;z-index:-1}
+.plabel{background:#fff;color:#000;display:flex;flex-direction:column;overflow:hidden;page-break-after:always;break-after:page;page-break-inside:avoid;break-inside:avoid;width:2.25in;height:1.25in;padding:.09in}
+.plabel:last-child{page-break-after:auto;break-after:auto}
+.plabel .top{font-family:'Inter',system-ui,sans-serif;font-size:.115in;font-weight:700;line-height:1.2;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:.03in}
+.plabel .bars{flex:1 1 60%;min-height:0;display:flex;align-items:center} .plabel .bars svg{display:block;width:100%;height:100%}
+.plabel .hr{font-family:'JetBrains Mono',ui-monospace,Menlo,monospace;font-size:.125in;font-weight:600;line-height:1.15;letter-spacing:.05em;text-align:center;margin-top:.035in;white-space:nowrap;overflow:hidden}
+@media print{ @page{size:2.25in 1.25in;margin:0}
+  html,body{background:#fff!important;color:#000!important;margin:0!important;padding:0!important}
+  header,main,.modal,#toasts,#lightbox,#modalHost{display:none!important}
+  #printArea{position:static!important;left:auto!important;visibility:visible!important;z-index:auto!important} }
 </style>
 </head>
 <body>
@@ -159,6 +170,7 @@ td.editable{cursor:pointer} td.editable:hover{background:#1a2338;box-shadow:inse
       <button class="btn" id="mDisc">⚖ Discrepancies <span class="badge err hide" id="mDiscN">0</span></button>
       <button class="btn" id="mHistory">🕘 History</button>
       <button class="btn primary" id="mGame">🎲 Plan a game</button>
+      <button class="btn" id="mBundles" title="Saved bundles: name, barcode, contents — used when a game is built">🧩 Bundles</button>
       <button class="btn hide" id="mBoxes" title="Packs per box (admin)">📦 Box settings</button>
       <button class="btn hide" id="mImport" title="Paste stock per location from a spreadsheet (admin)">📋 Import stock</button>
       <button class="btn ghost" id="mReload" title="Re-read the inventory sheet">⟳ Catalog</button>
@@ -170,7 +182,7 @@ td.editable{cursor:pointer} td.editable:hover{background:#1a2338;box-shadow:inse
   <section id="screen-loc" class="hide">
     <div class="topbar"><button class="btn ghost" id="lcBack">← Locations</button><h1 style="margin:0" id="lcTitle">—</h1><div class="spacer"></div>
       <div class="pill">Items <b id="lcItems">0</b> · units <b id="lcUnits">0</b></div>
-      <button class="btn sm" id="lcReq">🚚 Request</button><button class="btn sm" id="lcCount">🔢 Count</button><button class="btn sm ghost" id="lcCountHist" title="Finished counts of this location: open one, download it as CSV">🗂 Past counts</button><button class="btn sm" id="lcNewSub">＋ Sub-location</button><button class="btn sm primary" id="lcGame">🎲 Plan a game</button></div>
+      <button class="btn sm" id="lcReq">🚚 Request</button><button class="btn sm" id="lcCount">🔢 Count</button><button class="btn sm ghost" id="lcCountHist" title="Finished counts of this location: open one, download it as CSV">🗂 Past counts</button><button class="btn sm" id="lcNewSub">＋ Sub-location</button><button class="btn sm" id="lcDisplay" title="A display: sample products set aside to show on stream — kept apart from the stock of the room">🪟 New display</button><button class="btn sm primary" id="lcGame">🎲 Plan a game</button></div>
     <div class="chipbar" id="lcDrop"></div>
     <div class="seg" id="lcTabs" style="margin-bottom:12px"><button data-t="shift" class="hide">⏱ Shift</button><button data-t="stock" class="on">📦 Inventory</button><button data-t="subs">🧺 Sub-locations</button><button data-t="sales" class="hide">💲 Sales</button><button data-t="days">🗓 Days</button><button data-t="log">🕘 Movements</button></div>
     <div id="lcBody"></div>
@@ -204,6 +216,13 @@ td.editable{cursor:pointer} td.editable:hover{background:#1a2338;box-shadow:inse
     <div id="gmBody"></div>
   </section>
 
+  <section id="screen-bundles" class="hide">
+    <div class="topbar"><button class="btn ghost" id="bdBack">← Back</button><h1 style="margin:0">🧩 Bundles</h1><div class="spacer"></div><button class="btn primary" id="bdNew">＋ New bundle</button></div>
+    <p class="sub" style="font-size:13.5px;margin:0 0 12px">A bundle is set up once: its name, its own barcode and what is inside. When a game is built the bundle is picked from this list (or scanned by its barcode), and its label is scanned when the bundle is sold.</p>
+    <div class="row"><input id="bdQ" class="tinput" style="max-width:380px" placeholder="Find a bundle by name, barcode or product…" autocomplete="off"><span class="mini" id="bdN"></span></div>
+    <div id="bdBody" style="margin-top:12px"></div>
+  </section>
+
   <section id="screen-history" class="hide">
     <div class="topbar"><button class="btn ghost" id="hsBack">← Locations</button><h1 style="margin:0">🕘 History</h1><div class="spacer"></div><button class="btn sm" id="hsCsv">⬇ CSV</button></div>
     <div class="row"><input id="hsQ" class="tinput" style="max-width:420px" placeholder="Filter by item, location, person…" autocomplete="off"><select id="hsKind" class="sel"><option value="">All kinds</option><option value="transfer">Transfers</option><option value="recv">Receivings</option><option value="adjust">Corrections</option><option value="sub">Sub-locations</option><option value="sale">Sales (all)</option><option value="ch:sale">· regular sales</option><option value="ch:bufp">· BUFP auctions</option><option value="ch:game">· game sales</option><option value="openbox">Opened boxes</option></select><span class="mini" id="hsInfo"></span></div>
@@ -213,7 +232,7 @@ td.editable{cursor:pointer} td.editable:hover{background:#1a2338;box-shadow:inse
 
 <div id="lightbox" class="lightbox hide"><img id="lightboxImg" src="" alt=""></div>
 <div id="cam" class="cammodal hide"><div class="camhead"><span class="mini">📷 <b>Camera scan</b></span><div class="spacer"></div><button class="btn ghost sm" id="camClose">✕ Close</button></div><div class="camstage"><div id="camView"></div></div></div>
-<div id="modalHost"></div><div id="toasts"></div>
+<div id="modalHost"></div><div id="toasts"></div><div id="printArea"></div>
 
 <script>
 "use strict";
@@ -238,7 +257,7 @@ td.editable{cursor:pointer} td.editable:hover{background:#1a2338;box-shadow:inse
      packstation/transfers           → ready transfers become ledger events
    Day boundaries: calendar days (local time). Streamer rooms: day = day shift + night shift (build 3).
    ============================================================ */
-const BUILD='2026-11-20a · streaming rooms: Shift removed, Sales added';
+const BUILD='2026-11-24b · Bundles: catalog with names, barcodes and labels';
 const INV_CONFIG={apiKey:"AIzaSyAsTYwU0qABmXKuYSpyendwHw3djJc-Bqo",authDomain:"calipoke-inventory.firebaseapp.com",databaseURL:"https://calipoke-inventory-default-rtdb.firebaseio.com",projectId:"calipoke-inventory",storageBucket:"calipoke-inventory.firebasestorage.app",messagingSenderId:"156640764541",appId:"1:156640764541:web:833f96e4b0849b53454714"};
 const STATION_CONFIG={apiKey:"AIzaSyB2I2sR9czF6F29OZMyEZubmwQGP7nWFlc",authDomain:"calipoke-packstation.firebaseapp.com",databaseURL:"https://calipoke-packstation-default-rtdb.firebaseio.com",projectId:"calipoke-packstation",storageBucket:"calipoke-packstation.firebasestorage.app",messagingSenderId:"125288117157",appId:"1:125288117157:web:461b4d553e100c07b9ae4c"};
 const ROOT='inv', STATION_PATH='packstation';
@@ -320,7 +339,7 @@ document.addEventListener('click',e=>{ const t=e.target; if(t&&t.tagName==='IMG'
 $('#lightbox').onclick=()=>$('#lightbox').classList.add('hide');
 document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ $('#lightbox').classList.add('hide'); if(_modal) closeModal(); else if(!$('#cam').classList.contains('hide')) closeCam(); } });
 function applyLogo(){ [['logoHeader','dotHeader'],['logoGate','dotGate'],['logoMenu','dotMenu']].forEach(([a,b])=>{ const i=$('#'+a),d=$('#'+b); if(!i||!LOGO_URL) return; i.src=LOGO_URL; i.classList.remove('hide'); d.classList.add('hide'); i.onerror=()=>{ i.classList.add('hide'); d.classList.remove('hide'); }; }); }
-function show(s){ screen=s; ['menu','loc','overview','disc','history','game','import'].forEach(x=>$('#screen-'+x).classList.toggle('hide',x!==s)); closeModal(); window.scrollTo({top:0}); }
+function show(s){ screen=s; ['menu','loc','overview','disc','history','game','import','bundles'].forEach(x=>$('#screen-'+x).classList.toggle('hide',x!==s)); closeModal(); window.scrollTo({top:0}); }
 const isAdmin=()=>MY_ROLE==='admin';
 const isStreamer=()=>!!(window.CPAuth&&CPAuth.user&&CPAuth.user.role==='streamer');
 const canPlanGame=()=>!isStreamer();
@@ -378,6 +397,7 @@ function connect(){
   R.child('slabCounts').on('value',s=>{ SLAB_COUNTS=s.val()||{}; });
   R.child('countSessions').on('value',s=>{ CSESS=s.val()||{}; renderCurrent(); });
   R.child('boxes').on('value',s=>{ BOXES=s.val()||{}; renderCurrent(); });
+  R.child('bundleDefs').on('value',s=>{ BDEFS=s.val()||{}; if(screen==='bundles'&&!_modal) renderBundles(); });
   R.child('catalog').on('value',s=>{ CUSTOM={}; const v=s.val()||{}; for(const fk in v){ const c=v[fk]; if(c&&c.ikey) CUSTOM[c.ikey]=c; } setInventory(null); });
   R.child('shifts').on('value',s=>{ SHIFTS=s.val()||{}; renderCurrent(); });
   /* Warehouse = the live inventory count of the station, every location except STORE */
@@ -538,9 +558,52 @@ function openNewSub(loc){
 }
 async function moveSub(id,to){ const s=SUBS[id]; if(!s||!to||to===s.at) return; await R.child('subs/'+id).update({at:to,movedAt:Date.now(),movedBy:MY_NAME}); await R.child('subs/'+id+'/log').push({at:Date.now(),by:MY_NAME,text:'moved '+locName(s.at)+' → '+locName(to)}); toast('"'+s.name+'" moved to '+locName(to),'ok'); }
 async function returnSubAll(id){ const s=SUBS[id]; if(!s) return; const items=s.items||{}; const n=unitsOf(items);
-  if(!confirm('Return everything in "'+s.name+'" ('+fmt(n)+' units) to '+locName(s.at)+' and close it?\nThe sub-location stays in history.')) return;
-  for(const k in items){ if(+items[k]) await postEvent({item:k,qty:Math.abs(+items[k]),from:+items[k]>0?'sub:'+id:s.at,to:+items[k]>0?s.at:'sub:'+id,kind:'sub',note:'return all · '+s.name}); }
-  await R.child('subs/'+id).update({status:'closed',closedAt:Date.now(),closedBy:MY_NAME,returnedTo:s.at}); toast('"'+s.name+'" returned and closed','ok'); }
+  const H=gameHome(s);
+  if(!confirm('Return everything in "'+s.name+'" ('+fmt(n)+' units) to '+locName(H)+' and close it?\nIt stays in history.')) return;
+  for(const k in items){ if(+items[k]) await postEvent({item:k,qty:Math.abs(+items[k]),from:+items[k]>0?'sub:'+id:H,to:+items[k]>0?H:'sub:'+id,kind:'sub',note:'return all · '+s.name}); }
+  await R.child('subs/'+id).update({status:'closed',closedAt:Date.now(),closedBy:MY_NAME,returnedTo:H}); await R.child('subs/'+id+'/log').push({at:Date.now(),by:MY_NAME,text:'everything returned to '+locName(H)+' · closed'}); toast('"'+s.name+'" returned to '+locName(H)+' and closed','ok'); }
+/* one product out of a game / display, back to the shelf */
+function askSubReturn(id,k){ const s=SUBS[id]; if(!s) return; const it=itemInfo(k); const total=+((s.items||{})[fbKey(k)]||(s.items||{})[k])||0; const have=s.kind==='game'?freeOf(s,fbKey(k)):total;
+  if(total<=0){ toast('Nothing of this product is in "'+s.name+'"','warn'); return; } if(have<=0){ toast('Everything is inside bundles — edit the bundle first','warn'); return; }
+  const H=gameHome(s); const dests=[H].concat(s.at!==H&&s.kind!=='game'?[s.at]:[]); let to=H;
+  const d=modal('<h2>↩ Return from '+esc(s.name)+'</h2><div class="pcard">'+img(it.image)+'<div><div class="cn">'+nm(it)+'</div><div class="cv">'+esc(varOf(it.variation))+'</div><div class="cv">In '+esc(s.name)+': <b style="color:var(--ink)">'+fmt(have)+'</b>'+(have<total?' free · '+fmt(total-have)+' in bundles':'')+'</div></div></div>'+
+    (dests.length>1?'<div class="fld"><label>Return to</label><div class="chipsel" id="srTo"></div></div>':'<p class="mini">Goes back to <b>'+esc(locName(H))+'</b>.</p>')+
+    '<input id="srQ" class="bigqty" type="number" min="1" max="'+have+'" value="'+have+'"><button class="btn primary lg" id="srOk" style="width:100%;margin-top:12px">↩ Return</button>');
+  const drawTo=()=>{ const h=d.querySelector('#srTo'); if(!h) return; h.innerHTML=dests.map(x=>'<button class="chip'+(x===to?' on':'')+'" data-to="'+x+'">'+LOC_BY_ID[x].icon+' '+esc(locName(x))+'</button>').join(''); h.querySelectorAll('[data-to]').forEach(b=>b.onclick=()=>{ to=b.dataset.to; drawTo(); }); }; drawTo();
+  const inp=d.querySelector('#srQ'); let busy=false; const ok=async()=>{ if(busy) return; const n=int(inp.value); if(n<1||n>have){ toast('Enter 1 – '+have,'warn'); return; } busy=true;
+    await postEvent({item:INV_FB[k]||k,qty:n,from:'sub:'+id,to,kind:'sub',note:'returned from '+(s.kind==='display'?'display':'game')+' · '+s.name}); await R.child('subs/'+id+'/log').push({at:Date.now(),by:MY_NAME,text:'returned '+n+' × '+it.name+' → '+locName(to)});
+    closeModal(); toast('↩ '+n+' × '+it.name+' → '+locName(to),'ok',2200); if(screen==='game') renderGame(); else renderCurrent(); };
+  d.querySelector('#srOk').onclick=ok; inp.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); ok(); } }); setTimeout(()=>{ inp.focus(); inp.select(); },50); }
+/* ---- DISPLAY: sample products set aside to show on stream. A sub-location like a game, without the selling:
+   what is in it is taken out of the stock of the room, so other platforms can see what is free to use. ---- */
+function openNewDisplay(loc){
+  const d=modal('<h2>🪟 New display in '+esc(locName(loc))+'</h2><p class="sub" style="font-size:13px">A display holds the sample products shown on stream. They are kept apart from the stock of the room; return them to the Stockroom one by one or all at once when the display is taken down.</p>'+
+    '<div class="fld"><label>Name</label><input id="ndName" class="tinput" style="font-family:var(--body)" placeholder="e.g. TikTok 1 display · back wall"></div>'+
+    '<div class="row" style="margin-top:16px"><button class="btn primary lg" id="ndGo" style="flex:1">Create &amp; add products</button><button class="btn ghost" id="ndX">Cancel</button></div>');
+  d.querySelector('#ndX').onclick=closeModal; const inp=d.querySelector('#ndName'); setTimeout(()=>inp.focus(),50);
+  const go=async()=>{ const n=inp.value.trim(); if(n.length<2){ toast('Enter a name','warn'); return; } const ref=R.child('subs').push(); const rec={name:n,kind:'display',at:loc,home:'stockroom',status:'open',createdAt:Date.now(),createdBy:MY_NAME,items:{}};
+    await ref.set(rec); SUBS[ref.key]=SUBS[ref.key]||rec; alog('display_new',{text:n,loc,ref:ref.key}); closeModal(); toast('Display "'+n+'" created','ok'); lcTab='subs'; expandedSub=ref.key; renderLoc(); openDisplayAdd(ref.key); };
+  d.querySelector('#ndGo').onclick=go; inp.addEventListener('keydown',e=>{ if(e.key==='Enter') go(); });
+}
+/* add products to a display: from the room it stands in, or straight from the Stockroom */
+function openDisplayAdd(id){ const s0=SUBS[id]; if(!s0) return; const here=s0.at, srcs=[here].concat(here!=='stockroom'?['stockroom']:[]);
+  const d=modal('<h2>🪟 Add to '+esc(s0.name)+'</h2><p class="sub" style="font-size:13px">Scan or type a product. It is taken from '+srcs.map(x=>esc(locName(x))).join(' or ')+' and set aside in the display.</p>'+
+    '<div class="row" style="margin-top:10px"><input id="daQ" class="tinput" placeholder="Name or barcode…" autocomplete="off"></div><div class="mlist" id="daList"></div><button class="btn ghost" id="daX" style="width:100%;margin-top:10px">Done</button>',true);
+  const inp=d.querySelector('#daQ'), list=d.querySelector('#daList'); let rows=[];
+  const draw=()=>{ const s=SUBS[id]||s0; rows=searchProducts(inp.value,40); list.innerHTML=rows.length?rows.map((v,i)=>{ const inD=+((s.items||{})[fbKey(v.ikey)])||0; const av=srcs.map(x=>[x,Math.max(0,readyAt(x,v.ikey))]).filter(x=>x[1]>0);
+      return '<button class="mpick" data-i="'+i+'"'+(av.length?'':' style="opacity:.5"')+'>'+img(v.image)+'<div><div class="pn">'+nm(v)+'</div><div class="pv">'+esc(varOf(v.variation))+(inD?' · <span style="color:var(--ok)">in the display '+fmt(inD)+'</span>':'')+'</div></div><span class="pt'+(av.length?' here':'')+'"'+(av.length?'':' style="color:var(--err)"')+'>'+(av.length?av.map(x=>esc(locName(x[0]))+' '+fmt(x[1])).join(' · '):'not available')+'</span></button>'; }).join(''):'<div class="empty" style="padding:16px">Type a name or scan a barcode</div>';
+    list.querySelectorAll('.mpick').forEach(b=>b.onclick=()=>ask(rows[+b.dataset.i])); };
+  const ask=v=>{ const av=srcs.map(x=>[x,Math.max(0,readyAt(x,v.ikey))]); const ok0=av.filter(x=>x[1]>0); if(!ok0.length){ beep('warn'); toast(v.name+' is not available in '+srcs.map(locName).join(' or '),'warn',3500); return; }
+    let from=ok0[0][0]; const box=document.createElement('div'); box.className='card'; box.style.cssText='margin-top:10px;padding:12px;border-color:var(--accent)';
+    const drawBox=()=>{ const max=(av.find(x=>x[0]===from)||[0,0])[1]; box.innerHTML='<div class="pcard" style="margin:0 0 8px">'+img(v.image)+'<div><div class="cn">'+nm(v)+'</div><div class="cv">'+esc(varOf(v.variation))+'</div></div></div>'+
+        '<div class="row" style="gap:8px;align-items:center"><span class="mini">Take from</span><div class="chipsel" style="margin:0">'+av.map(x=>'<button class="chip'+(x[0]===from?' on':'')+'" data-f="'+x[0]+'" '+(x[1]>0?'':'disabled style="opacity:.4"')+'>'+LOC_BY_ID[x[0]].icon+' '+esc(locName(x[0]))+' · '+fmt(x[1])+'</button>').join('')+'</div><input id="daN" class="tinput" type="number" min="1" max="'+max+'" value="1" style="width:100px"><button class="btn primary" id="daOk">＋ Add</button><button class="btn ghost" id="daNo">Cancel</button></div>';
+      box.querySelectorAll('[data-f]').forEach(b=>b.onclick=()=>{ from=b.dataset.f; drawBox(); });
+      const q=box.querySelector('#daN'); let busy=false; const go=async()=>{ if(busy) return; const n=int(q.value); if(n<1||n>max){ toast('Enter 1 – '+max,'warn'); return; } busy=true;
+        await postEvent({item:v.ikey,qty:n,from,to:'sub:'+id,kind:'sub',note:'display · '+s0.name}); beep('ok'); toast('🪟 '+n+' × '+v.name+' → '+s0.name,'ok',1800); box.remove(); inp.value=''; draw(); inp.focus(); };
+      box.querySelector('#daOk').onclick=go; box.querySelector('#daNo').onclick=()=>{ box.remove(); inp.focus(); }; q.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); go(); } }); setTimeout(()=>{ q.focus(); q.select(); },40); };
+    const old=d.querySelector('.card'); if(old) old.remove(); list.parentNode.insertBefore(box,list); drawBox(); };
+  inp.addEventListener('input',draw); inp.addEventListener('keydown',e=>{ if(e.key!=='Enter') return; e.preventDefault(); const bk=BC[norm(inp.value.trim())]||[]; if(bk.length&&INV[bk[0]]){ ask(INV[bk[0]]); return; } if(rows.length===1) ask(rows[0]); });
+  draw(); setTimeout(()=>inp.focus(),50); d.querySelector('#daX').onclick=()=>{ closeModal(); renderCurrent(); }; }
 
 /* ============================================================
    COUNT a location (physical count vs system) — discrepancies
@@ -1036,6 +1099,8 @@ async function startGame(id){ const s=SUBS[id]; if(!s) return; if(!shiftOpenIn(s
   await setGameStatus(id,'live',{start,sold:{},startedAt:Date.now(),startedBy:MY_NAME,room:s.at}); alog('game_start',{text:s.name,loc:s.at,ref:id}); beep('ok'); toast('Game started — sell by scan or name','ok'); openGame(id,'loc'); }
 function renderGame(){
   const s=SUBS[curGame]; if(!s){ goMenu(); return; } const st=gameStatus(s); const sid='sub:'+curGame;
+  if(gmTab==='report'&&(isStreamer()||st==='planning')) gmTab='sell';
+  if(gmTab==='report'){ renderGameReport(s,st); return; }
   const items=s.items||{}, start=s.start||{}, sold=s.sold||{}, bundles=s.bundles||{}; const edit=(st==='planning'||(st==='ready'&&s.editing))&&!isStreamer(); const live=st==='live'; const strm=isStreamer();
   $('#gmTitle').textContent='🎲 '+s.name; const gs=$('#gmStat'); gs.className='gstat '+st; gs.textContent=st;
   const inStream=(LOC_BY_ID[s.at]||{}).kind==='stream';
@@ -1055,18 +1120,18 @@ function renderGame(){
   const HN=esc(locName(gameHome(s)));
   const hint=st==='planning'?'Build the list from '+HN+(gameHome(s)==='gamearea'?' — what is in the Stockroom is shown too and can be transferred in':'')+': scan or type a product. Open boxes into packs, group products into bundles.':st==='ready'?(s.editing?'Editing the list.':'List is ready. Move the game to the streamer\'s room — the streamer presses Start game there.'):live?'Selling: scan or type a product or a bundle. Leftovers stay in the game.':st==='ended'?'Game ended — leftovers are fixed in the game. Count them if needed, then move the game whole to another room or back to '+HN+' (Return all puts leftovers on the shelf).':'Closed — kept in history.';
   const kv='<div class="kvs">'+(start&&unitsOf(start)?'<div class="kv"><div class="n">'+fmt(unitsOf(start))+'</div><div class="l">start</div></div><div class="kv ok"><div class="n">'+fmt(unitsOf(sold))+'</div><div class="l">sold</div></div>':'')+'<div class="kv"><div class="n">'+fmt(unitsOf(items))+'</div><div class="l">'+(start&&unitsOf(start)?'left':'units in the game')+'</div></div><div class="kv"><div class="n">'+Object.keys(bundles).length+'</div><div class="l">bundles</div></div><div class="kv"><div class="n" style="font-size:16px">'+esc(locName(s.at))+'</div><div class="l">now in</div></div></div>';
-  const scan=(edit||live)?'<div class="scanwrap"><div class="scanhead"><span class="mode'+(live?'':' label')+'">'+(live?'💲 Selling':'＋ Adding from '+HN)+'</span><span class="mini">'+esc(hint)+'</span></div><div class="scanrow" style="position:relative"><input id="gmScan" autocomplete="off" placeholder="'+(live?'Scan or type a product or bundle…':'Scan or type a product…')+'"><button class="btn" id="gmCam">📷</button>'+(edit?'<button class="btn" id="gmNewBundle">🎁 Create bundle</button>':'')+'<div class="sugg hide" id="gmSugg"></div></div></div>':'<div class="note info" style="margin-bottom:12px">'+esc(hint)+'</div>';
+  const scan=(edit||live)?'<div class="scanwrap"><div class="scanhead"><span class="mode'+(live?'':' label')+'">'+(live?'💲 Selling':'＋ Adding from '+HN)+'</span><span class="mini">'+esc(hint)+'</span></div><div class="scanrow" style="position:relative"><input id="gmScan" autocomplete="off" placeholder="'+(live?'Scan or type a product or bundle…':'Scan or type a product…')+'"><button class="btn" id="gmCam">📷</button>'+(edit?'<button class="btn" id="gmNewBundle">🧩 Add bundle</button>':'')+'<div class="sugg hide" id="gmSugg"></div></div></div>':'<div class="note info" style="margin-bottom:12px">'+esc(hint)+'</div>';
   const resv=bundleReserved(s); const all=gmTab==='all';
   const rows=keys.filter(k=>!q||norm(itemInfo(k).name).includes(q)).filter(k=>all||(+items[k]-(resv[k]||0))!==0||!(resv[k])).map(k=>{ const it=itemInfo(k); const n=all?(+items[k]||0):(+items[k]||0)-(resv[k]||0); const isBox=false;
     const qty=all&&start&&unitsOf(start)?'<div class="q3"><span>start<b>'+fmt(start[k]||0)+'</b></span><span>sold<b style="color:var(--ok)">'+fmt(sold[k]||0)+'</b></span><span>left<b'+(n<0?' style="color:var(--err)"':'')+'>'+fmt(n)+'</b></span></div>':'<div class="q'+(n<0?' neg':'')+'">'+fmt(n)+'<small>'+(all?'total':(resv[k]?'free · '+fmt(resv[k])+' in bundles':'units'))+'</small></div>';
-    const acts=all?'':live?'<button class="btn sm primary" data-sell="'+esc(k)+'" '+(n>0?'':'disabled')+'>💲 Sell</button>':edit?'<button class="btn sm" data-bundle="'+esc(k)+'" title="Add to bundle">🎁</button><button class="btn sm ghost" data-rm="'+esc(k)+'" title="Return to Stockroom">−</button>':'';
+    const acts=all?'':live?'<button class="btn sm primary" data-sell="'+esc(k)+'" '+(n>0?'':'disabled')+'>💲 Sell</button>':edit?'<button class="btn sm" data-bundle="'+esc(k)+'" title="Add to bundle">🧩</button><button class="btn sm ghost" data-rm="'+esc(k)+'" title="Return to Stockroom">−</button>':'';
     return '<div class="irow" data-k="'+esc(k)+'" data-loc="'+sid+'">'+img(it.image)+'<div><div class="nm">'+nm(it)+'</div><div class="vr">'+esc(varOf(it.variation))+(it.barcode?' · <span class="mono">'+esc(barcodesOf(it.barcode)[0]||'')+'</span>':'')+'</div></div>'+qty+'<div class="acts">'+acts+'</div></div>'; });
   const bl=all?[]:Object.keys(bundles).filter(bid=>!q||norm(bundles[bid].name).includes(q)).map(bid=>{ const b=bundles[bid]; const comp=b.items||{}; const avail=+b.count||0; const soldB=(s.soldBundles||{})[bid]||0;
-    return '<div class="bcard"><div style="width:46px;height:46px;border-radius:10px;background:#231a3a;display:grid;place-items:center;font-size:24px">🎁</div><div style="flex:1;min-width:200px"><div class="bn">'+esc(b.name)+'</div><div class="bc">'+Object.keys(comp).map(k=>fmt(comp[k])+' × '+nm(itemInfo(k))).join(' + ')+'</div></div><div class="q'+(avail<=0?' neg':'')+'">'+fmt(avail)+'<small>'+(soldB?'left · sold '+fmt(soldB):'bundles')+'</small></div><div class="acts">'+(live?'<button class="btn sm primary" data-sellb="'+bid+'" '+(avail>0?'':'disabled')+'>💲 Sell bundle</button>':edit?'<button class="btn sm ghost" data-editb="'+bid+'">✎</button><button class="btn sm ghost" data-delb="'+bid+'">✕</button>':'')+'</div></div>'; });
+    return '<div class="bcard"><div style="width:46px;height:46px;border-radius:10px;background:#231a3a;display:grid;place-items:center;font-size:24px">🧩</div><div style="flex:1;min-width:200px"><div class="bn">'+esc(b.name)+(b.bc?' <span class="mono mini" style="margin-left:6px">'+esc(b.bc)+'</span>':'')+'</div><div class="bc">'+Object.keys(comp).map(k=>fmt(comp[k])+' × '+nm(itemInfo(k))).join(' + ')+'</div></div><div class="q'+(avail<=0?' neg':'')+'">'+fmt(avail)+'<small>'+(soldB?'left · sold '+fmt(soldB):'bundles')+'</small></div><div class="acts">'+(live?'<button class="btn sm primary" data-sellb="'+bid+'" '+(avail>0?'':'disabled')+'>💲 Sell bundle</button>':edit?'<button class="btn sm ghost" data-editb="'+bid+'">✎</button><button class="btn sm ghost" data-delb="'+bid+'">✕</button>':'')+'</div></div>'; });
   const sales=Object.keys(s.sales||{}).map(id=>Object.assign({id},s.sales[id])).sort((a,b)=>(b.ts||0)-(a.ts||0));
-  $('#gmBody').innerHTML=kv+scan+'<div class="row"><div class="seg" id="gmTabs"><button data-gt="sell" class="'+(all?'':'on')+'">🎁 Bundles & singles</button><button data-gt="all" class="'+(all?'on':'')+'">📋 All prepared</button></div><input id="gmQ" class="tinput" style="max-width:300px" placeholder="Filter the list…" value="'+esc(gmQ)+'" autocomplete="off"><span class="mini">'+(all?keys.length+' product(s) · totals incl. bundle contents':Object.keys(bundles).length+' bundle(s) · singles show what is outside bundles')+'</span></div>'+
+  $('#gmBody').innerHTML=kv+scan+'<div class="row"><div class="seg" id="gmTabs"><button data-gt="sell" class="'+(all?'':'on')+'">🧩 Bundles & singles</button><button data-gt="all" class="'+(all?'on':'')+'">📋 All prepared</button>'+(strm||st==='planning'?'':'<button data-gt="report">📊 Sales report</button>')+'</div><input id="gmQ" class="tinput" style="max-width:300px" placeholder="Filter the list…" value="'+esc(gmQ)+'" autocomplete="off"><span class="mini">'+(all?keys.length+' product(s) · totals incl. bundle contents':Object.keys(bundles).length+' bundle(s) · singles show what is outside bundles')+'</span></div>'+
     '<div class="list" id="gmList">'+bl.join('')+(rows.length?rows.join(''):(bl.length?'':'<div class="empty">'+(keys.length?'Nothing matches the filter.':'The list is empty — scan or type a product from the Stockroom.')+'</div>'))+'</div>'+
-    (sales.length?'<h2 style="margin-top:20px">Sales · '+sales.length+'</h2><div class="card">'+sales.slice(0,200).map(x=>'<div class="logrow"><span class="lt">'+esc(fmtTime(x.ts))+'<br>'+esc(x.by||'')+'</span><span>'+(x.bundle?'🎁 ':'')+'<b>'+esc(x.name)+'</b>'+(x.reversed?' <span class="badge muted">reversed</span>':'')+'</span><span class="lq">'+fmt(x.qty)+(x.reversed||!(isAdmin()||x.by===MY_NAME)?'':' <button class="btn sm ghost" data-undo="'+x.id+'" title="Reverse this sale">↩</button>')+'</span></div>').join('')+'</div>':'');
+    (sales.length?'<h2 style="margin-top:20px">Sales · '+sales.length+'</h2><div class="card">'+sales.slice(0,200).map(x=>'<div class="logrow"><span class="lt">'+esc(fmtTime(x.ts))+'<br>'+esc(x.by||'')+'</span><span>'+(x.bundle?'🧩 ':'')+'<b>'+esc(x.name)+'</b>'+(x.reversed?' <span class="badge muted">reversed</span>':'')+'</span><span class="lq">'+fmt(x.qty)+(x.reversed||x.qty<0||!(isAdmin()||x.by===MY_NAME)?'':' <button class="btn sm ghost" data-undo="'+x.id+'" title="Reverse this sale">↩</button>')+'</span></div>').join('')+'</div>':'');
   /* wiring */
   const g=sel=>$('#gmActs '+sel)||$('#gmBody '+sel);
   const b1=g('#gmReady'); if(b1) b1.onclick=()=>setGameStatus(curGame,'ready',{editing:null,readyAt:Date.now(),readyBy:MY_NAME});
@@ -1085,16 +1150,20 @@ function renderGame(){
   $$('#gmList [data-open]').forEach(b=>b.onclick=()=>openBox(b.dataset.open)); $$('#gmList [data-bundle]').forEach(b=>b.onclick=()=>addToBundle(b.dataset.bundle));
   $$('#gmList [data-rm]').forEach(b=>b.onclick=()=>askRemove(b.dataset.rm)); $$('#gmBody [data-editb]').forEach(b=>b.onclick=()=>editBundle(b.dataset.editb)); $$('#gmBody [data-delb]').forEach(b=>b.onclick=()=>{ if(confirm('Delete this bundle? Products stay in the game.')) R.child('subs/'+curGame+'/bundles/'+b.dataset.delb).remove(); });
   $$('#gmBody [data-undo]').forEach(b=>b.onclick=()=>undoSale(b.dataset.undo));
-  const nb=$('#gmNewBundle'); if(nb) nb.onclick=()=>editBundle(null);
+  const nb=$('#gmNewBundle'); if(nb) nb.onclick=()=>pickBundleForGame();
   const sc=$('#gmScan'), sg=$('#gmSugg'); if(!sc) return;
   const pick=(kind,k)=>{ sc.value=''; sg.classList.add('hide'); if(kind==='bundle') askSellBundle(k); else if(live) askSell(k); else askAdd(k); };
   const candidates=v=>{ const out=[]; if(live){ const nv=norm(v); Object.keys(bundles).forEach(bid=>{ if(norm(bundles[bid].name).includes(nv)) out.push({kind:'bundle',k:bid,name:bundles[bid].name,sub:'bundle',here:''}); }); (BC[nv]||[]).forEach(k=>{ if(items[fbKey(k)]) out.push({kind:'item',k:fbKey(k),name:itemInfo(k).name,type:itemInfo(k).type,sub:varOf(itemInfo(k).variation),here:'left '+fmt(items[fbKey(k)]),img:itemInfo(k).image}); }); keys.forEach(k=>{ if(out.some(o=>o.k===k)) return; const it=itemInfo(k); if(norm(it.name).includes(nv)||norm(it.variation).includes(nv)) out.push({kind:'item',k,name:it.name,type:it.type,sub:varOf(it.variation),here:'left '+fmt(items[k]||0),img:it.image}); }); return out.slice(0,14); }
     const fd=gFeeder(); return searchProducts(v,14).map(p=>{ const r=Math.max(0,readyInStockroom(p.ikey)), r2=fd?Math.max(0,readyAt(fd,p.ikey)):0; return {kind:'item',k:p.ikey,name:p.name,type:p.type,sub:varOf(p.variation),here:(r>0?'ready '+fmt(r):'')+(r2>0?(r>0?' · ':'')+locName(fd)+' '+fmt(r2):'')||'not available',ok:r>0||r2>0,img:p.image}; }); };
   const sugg=()=>{ const v=sc.value.trim(); if(!v){ sg.classList.add('hide'); return; } const rows=candidates(v); if(!rows.length){ sg.classList.add('hide'); return; }
-    sg.innerHTML=rows.map((r,i)=>'<button class="mpick" data-i="'+i+'">'+(r.kind==='bundle'?'<div style="width:44px;height:44px;border-radius:8px;background:#231a3a;display:grid;place-items:center;font-size:22px">🎁</div>':img(r.img))+'<div><div class="pn">'+esc(r.name)+'</div><div class="pv">'+esc(r.sub)+'</div></div><span class="pt'+(r.ok||live?' here':'')+'"'+(r.ok===false?' style="color:var(--err)"':'')+'>'+esc(r.here)+'</span></button>').join(''); sg.classList.remove('hide');
+    sg.innerHTML=rows.map((r,i)=>'<button class="mpick" data-i="'+i+'">'+(r.kind==='bundle'?'<div style="width:44px;height:44px;border-radius:8px;background:#231a3a;display:grid;place-items:center;font-size:22px">🧩</div>':img(r.img))+'<div><div class="pn">'+esc(r.name)+'</div><div class="pv">'+esc(r.sub)+'</div></div><span class="pt'+(r.ok||live?' here':'')+'"'+(r.ok===false?' style="color:var(--err)"':'')+'>'+esc(r.here)+'</span></button>').join(''); sg.classList.remove('hide');
     sg.querySelectorAll('.mpick').forEach(b=>b.onmousedown=e=>{ e.preventDefault(); const r=rows[+b.dataset.i]; pick(r.kind,r.k); }); };
   sc.addEventListener('input',sugg); sc.addEventListener('blur',()=>setTimeout(()=>sg.classList.add('hide'),150));
-  sc.addEventListener('keydown',e=>{ if(e.key!=='Enter') return; e.preventDefault(); const v=sc.value.trim(); if(!v) return; const rows=candidates(v); const bk=BC[norm(v)]||[]; if(bk.length){ const r=rows.find(x=>x.kind==='item'&&(x.k===bk[0]||x.k===fbKey(bk[0]))); if(r){ pick('item',r.k); return; } if(live){ beep('err'); toast('This product is not in the game','err'); return; } pick('item',bk[0]); return; } if(rows.length===1){ pick(rows[0].kind,rows[0].k); return; } if(!rows.length){ beep('warn'); toast('Nothing matches "'+v+'"','warn'); } });
+  sc.addEventListener('keydown',e=>{ if(e.key!=='Enter') return; e.preventDefault(); const v=sc.value.trim(); if(!v) return;
+    { const gb=Object.keys(bundles).find(bid=>bundles[bid].bc&&String(bundles[bid].bc)===v); const df=bdefByCode(v);
+      if(gb){ sc.value=''; sg.classList.add('hide'); if(live) askSellBundle(gb); else editBundle(gb); return; }
+      if(df){ sc.value=''; sg.classList.add('hide'); if(live){ beep('err'); toast('The bundle “'+df.name+'” is not in this game','err',3500); } else editBundle(null,null,df); return; } }
+    const rows=candidates(v); const bk=BC[norm(v)]||[]; if(bk.length){ const r=rows.find(x=>x.kind==='item'&&(x.k===bk[0]||x.k===fbKey(bk[0]))); if(r){ pick('item',r.k); return; } if(live){ beep('err'); toast('This product is not in the game','err'); return; } pick('item',bk[0]); return; } if(rows.length===1){ pick(rows[0].kind,rows[0].k); return; } if(!rows.length){ beep('warn'); toast('Nothing matches "'+v+'"','warn'); } });
   $('#gmCam').onclick=()=>openCam(code=>{ sc.value=code; sc.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter'})); });
   setTimeout(()=>{ if(document.activeElement!==$('#gmQ')) sc.focus(); },60);
 }
@@ -1186,25 +1255,213 @@ function openBoxSettings(){ if(!isAdmin()){ toast('Box settings are edited by Ad
   d.querySelectorAll('[data-bx]').forEach(b=>b.onclick=()=>boxSetup(INV_FB[b.dataset.bx]||b.dataset.bx,openBoxSettings)); d.querySelectorAll('[data-bxdel]').forEach(b=>b.onclick=async()=>{ if(confirm('Remove these box settings?')){ await R.child('boxes/'+b.dataset.bxdel).remove(); openBoxSettings(); } });
   const q=d.querySelector('#bxQ'), sg=d.querySelector('#bxSugg'); q.addEventListener('input',()=>{ const rows=searchProducts(q.value,12); if(!q.value.trim()||!rows.length){ sg.classList.add('hide'); return; } sg.innerHTML=rows.map((p,i)=>'<button class="mpick" data-i="'+i+'">'+img(p.image)+'<div><div class="pn">'+nm(p)+'</div><div class="pv">'+esc(varOf(p.variation))+'</div></div><span class="pt"></span></button>').join(''); sg.classList.remove('hide'); sg.querySelectorAll('.mpick').forEach(b=>b.onmousedown=e=>{ e.preventDefault(); boxSetup(rows[+b.dataset.i].ikey,openBoxSettings); }); }); q.addEventListener('blur',()=>setTimeout(()=>sg.classList.add('hide'),150)); }
 /* ---- bundles ---- */
-function editBundle(bid,preK){ const s=SUBS[curGame]; const b=bid?Object.assign({},(s.bundles||{})[bid]):{name:'',items:{},count:1}; const comp=Object.assign({},b.items||{}); if(preK&&!comp[preK]) comp[preK]=1; const items=s.items||{}; let count=+b.count||1;
+/* ============================================================
+   BUNDLES — the catalog (inv/bundleDefs/{id} = {name, bc, items:{itemKey:qty}})
+   A bundle is defined once: name, its own barcode, contents. A game takes bundles from this
+   list; a bundle made while a game is being built is saved here too. The barcode (10 digits,
+   starts with 98 — no product uses such a code) is printed on a 2.25 × 1.25 in label and
+   scanned when the bundle is sold, or to add the bundle to a game.
+   ============================================================ */
+/* ---------------- Code 128 (the encoder of LABEL PRINT) ---------------- */
+var PATTERNS = ["212222","222122","222221","121223","121322","131222","122213","122312","132212","221213","221312","231212","112232","122132","122231","113222","123122","123221","223211","221132","221231","213212","223112","312131","311222","321122","321221","312212","322112","322211","212123","212321","232121","111323","131123","131321","112313","132113","132311","211313","231113","231311","112133","112331","132131","113123","113321","133121","313121","211331","231131","213113","213311","213131","311123","311321","331121","312113","312311","332111","314111","221411","431111","111224","111422","121124","121421","141122","141221","112214","112412","122114","122411","142112","142211","241211","221114","413111","241112","134111","111242","121142","121241","114212","124112","124211","411212","421112","421211","212141","214121","412121","111143","111341","131141","114113","114311","411113","411311","113141","114131","311141","411131","211412","211214","211232","2331112"];
+var START_B = 104, START_C = 105, CODE_B = 100, CODE_C = 99, STOP = 106;
+
+function digitRun(s, pos){
+  var n = 0;
+  while (pos + n < s.length && s[pos+n] >= "0" && s[pos+n] <= "9") n++;
+  return n;
+}
+
+function encodeValues(data){
+  var codes = [], i = 0, lead = digitRun(data, 0), mode;
+  if (data.length >= 2 && lead === data.length && lead % 2 === 0) mode = "C";
+  else if (lead >= 4) mode = "C";
+  else mode = "B";
+  codes.push(mode === "C" ? START_C : START_B);
+  var usedC = mode === "C", usedB = mode === "B";
+  while (i < data.length){
+    if (mode === "C"){
+      var d = digitRun(data, i);
+      if (d >= 2){
+        var take = d - (d % 2);
+        for (var k = 0; k < take; k += 2) codes.push(parseInt(data.substr(i+k,2),10));
+        i += take;
+        if (i < data.length && digitRun(data,i) < 2){ codes.push(CODE_B); mode = "B"; usedB = true; }
+      } else { codes.push(CODE_B); mode = "B"; usedB = true; }
+    } else {
+      var dd = digitRun(data, i);
+      if ((dd % 2 === 0 && dd >= 4) || dd >= 6){ codes.push(CODE_C); mode = "C"; usedC = true; }
+      else { codes.push(data.charCodeAt(i) - 32); i++; }
+    }
+  }
+  var sum = codes[0];
+  for (var j = 1; j < codes.length; j++) sum += codes[j] * j;
+  codes.push(sum % 103);
+  codes.push(STOP);
+  codes.sets = (usedB && usedC) ? "B+C" : (usedC ? "C" : "B");
+  return codes;
+}
+
+function encodeWidths(data){
+  var codes = encodeValues(data), out = [];
+  for (var i = 0; i < codes.length; i++){
+    var p = PATTERNS[codes[i]];
+    for (var k = 0; k < p.length; k++) out.push(+p[k]);
+  }
+  out.sets = codes.sets;
+  return out;
+}
+
+var QUIET = 10; // quiet-zone modules on each side
+
+function barcodeSvg(data){
+  var w = encodeWidths(data), total = QUIET * 2, i;
+  for (i = 0; i < w.length; i++) total += w[i];
+  var rects = "", x = QUIET;
+  for (i = 0; i < w.length; i++){
+    if (i % 2 === 0) rects += '<rect x="' + x + '" y="0" width="' + w[i] + '" height="100"/>';
+    x += w[i];
+  }
+  return {
+    svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + total + ' 100" ' +
+         'preserveAspectRatio="none" shape-rendering="crispEdges" fill="#000">' + rects + '</svg>',
+    modules: total,
+    sets: w.sets
+  };
+}
+
+let BDEFS={}, bdQ='', bdBackTo='menu';
+const bdefList=()=>Object.keys(BDEFS).map(id=>Object.assign({id},BDEFS[id])).filter(x=>x&&x.name).sort((a,b)=>String(a.name).localeCompare(String(b.name),undefined,{numeric:true}));
+const bdefByCode=c=>{ c=String(c||'').trim(); return c?bdefList().find(x=>String(x.bc)===c)||null:null; };
+function genBundleCode(){ for(let n=0;n<300;n++){ const c='98'+String(Math.floor(Math.random()*1e8)).padStart(8,'0'); if(!(BC[c]&&BC[c].length)&&!bdefByCode(c)) return c; } return '98'+String(Date.now()).slice(-8); }
+const bundleContents=items=>Object.keys(items||{}).map(k=>fmt(items[k])+' × '+itemInfo(k).name).join(' + ');
+function bundleLabelHTML(b){ return '<div class="top">'+esc(String(b.name||'').toUpperCase())+'</div><div class="bars">'+barcodeSvg(String(b.bc)).svg+'</div><div class="hr">'+esc(b.bc)+'</div>'; }
+function printBundleLabels(b,copies){ if(!b||!b.bc){ toast('This bundle has no barcode yet — open it and save','warn'); return; } const n=Math.max(1,Math.min(200,int(copies)||1)); let out=''; for(let i=0;i<n;i++) out+='<div class="plabel">'+bundleLabelHTML(b)+'</div>';
+  $('#printArea').innerHTML=out; toast('Paper 2.25 × 1.25 in · margins None · scale 100 %','ok',5000); setTimeout(()=>window.print(),80); }
+function openBundles(back){ bdBackTo=back||'menu'; show('bundles'); const q=$('#bdQ'); q.value=bdQ; renderBundles(); }
+function renderBundles(){ const all=bdefList(); const q=norm(bdQ); const list=all.filter(b=>!q||norm(b.name).includes(q)||String(b.bc||'').includes(bdQ.trim())||Object.keys(b.items||{}).some(k=>norm(itemInfo(k).name).includes(q)));
+  $('#bdN').textContent=list.length+' of '+all.length+' bundle'+(all.length===1?'':'s');
+  $('#bdBody').innerHTML=list.length?list.map(b=>{ const keys=Object.keys(b.items||{}); const used=Object.keys(SUBS).filter(id=>SUBS[id].status!=='closed'&&Object.values(SUBS[id].bundles||{}).some(x=>x.def===b.id)).map(id=>SUBS[id].name);
+      return '<div class="bcard" style="align-items:flex-start"><div style="width:46px;height:46px;border-radius:10px;background:#231a3a;display:grid;place-items:center;font-size:24px">🧩</div><div style="flex:1;min-width:240px"><div class="bn">'+esc(b.name)+' <span class="mono mini" style="margin-left:6px">'+esc(b.bc||'no barcode')+'</span></div>'+
+        '<div class="bc">'+(keys.length?keys.map(k=>'<b>'+fmt(b.items[k])+'</b> × '+nm(itemInfo(k))+(varOf(itemInfo(k).variation)?' <span class="mini">'+esc(varOf(itemInfo(k).variation))+'</span>':'')).join(' &nbsp;+&nbsp; '):'<span style="color:var(--warn)">no products yet</span>')+'</div>'+
+        (used.length?'<div class="mini" style="margin-top:4px">in games now: '+esc(used.join(' · '))+'</div>':'')+'</div>'+
+        '<div class="acts" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><input class="tinput" type="number" min="1" max="200" value="1" data-bdcopies="'+b.id+'" style="width:70px;min-width:0;flex:0 0 70px" title="Copies of the label"><button class="btn sm" data-bdprint="'+b.id+'">🖨 Label</button><button class="btn sm" data-bdedit="'+b.id+'">✎ Edit</button>'+(isAdmin()?'<button class="btn sm ghost" data-bddel="'+b.id+'" style="color:var(--err)">✕</button>':'')+'</div></div>'; }).join('')
+    :'<div class="empty">'+(all.length?'Nothing matches.':'No bundles yet. Press <b>＋ New bundle</b> — give it a name and add what is inside; the barcode is made automatically.')+'</div>';
+  $$('#bdBody [data-bdedit]').forEach(b=>b.onclick=()=>editBundleDef(b.dataset.bdedit));
+  $$('#bdBody [data-bdprint]').forEach(b=>b.onclick=()=>printBundleLabels(BDEFS[b.dataset.bdprint],($('#bdBody [data-bdcopies="'+b.dataset.bdprint+'"]')||{}).value));
+  $$('#bdBody [data-bddel]').forEach(b=>b.onclick=async()=>{ const x=BDEFS[b.dataset.bddel]; if(!x||!confirm('Delete the bundle “'+x.name+'” from the list?\n\nGames that already use it keep their bundles; its barcode stops working for new games.')) return; await R.child('bundleDefs/'+b.dataset.bddel).remove(); alog('bundle_del',{text:x.name}); toast('Bundle deleted','ok'); });
+}
+/* create / edit a bundle of the catalog. after(id) is called when it is saved (used when a game is being built) */
+function editBundleDef(id,after,pre){ const cur=id?BDEFS[id]:null; let name=cur?cur.name:((pre&&pre.name)||''); const bc=(cur&&cur.bc)||genBundleCode(); const comp=Object.assign({},cur?cur.items:(pre&&pre.items)||{}); let busy=false;
+  const draw=()=>{ const keys=Object.keys(comp); const d=modal('<h2>🧩 '+(cur?'Edit bundle':'New bundle')+'</h2>'+
+      '<div class="fld"><label>Bundle name</label><input id="bdName" class="tinput" style="font-family:var(--body)" value="'+esc(name)+'" placeholder="e.g. Starter bundle · 3 packs + sleeve" autocomplete="off"></div>'+
+      '<div class="fld"><label>Barcode — made automatically, printed on a 2.25 × 1.25 in label</label><div class="row" style="gap:10px;align-items:center"><span class="mono" style="font-size:16px;font-weight:700">'+esc(bc)+'</span><div style="background:#fff;border-radius:6px;overflow:hidden"><div class="plabel" id="bdPrev" style="zoom:.6"></div></div><span class="mini">Copies</span><input id="bdCopies" class="tinput" type="number" min="1" max="200" value="1" style="width:70px"><button class="btn sm" id="bdPrint">🖨 Print</button></div></div>'+
+      '<div class="fld"><label>Contents — per one bundle</label>'+(keys.length?keys.map(k=>'<div class="row" style="margin-top:6px"><span style="flex:1">'+nm(itemInfo(k))+' <span class="mini">'+esc(varOf(itemInfo(k).variation))+'</span></span><input class="qi" data-ck="'+esc(k)+'" type="number" min="1" value="'+comp[k]+'"><button class="btn sm ghost" data-cdel="'+esc(k)+'">✕</button></div>').join(''):'<p class="mini">Nothing yet — add products below.</p>')+'</div>'+
+      '<div style="position:relative;margin-top:10px"><input id="bdAdd" class="tinput" style="width:100%" placeholder="Add a product: scan or type its name…" autocomplete="off"><div class="sugg hide" id="bdSugg"></div></div>'+
+      '<div class="row" style="margin-top:16px"><button class="btn primary lg" id="bdOk" style="flex:1">Save bundle</button><button class="btn ghost" id="bdX">Cancel</button></div>');
+    const keep=()=>{ name=d.querySelector('#bdName').value; d.querySelectorAll('[data-ck]').forEach(i=>{ comp[i.dataset.ck]=Math.max(1,int(i.value)); }); };
+    const prev=()=>{ d.querySelector('#bdPrev').innerHTML=bundleLabelHTML({name:d.querySelector('#bdName').value||'BUNDLE',bc}); }; prev(); d.querySelector('#bdName').addEventListener('input',prev);
+    d.querySelector('#bdPrint').onclick=()=>{ keep(); if(name.trim().length<2){ toast('Name the bundle first','warn'); return; } printBundleLabels({name:name.trim(),bc},d.querySelector('#bdCopies').value); };
+    d.querySelector('#bdX').onclick=closeModal; d.querySelectorAll('[data-cdel]').forEach(x=>x.onclick=()=>{ keep(); delete comp[x.dataset.cdel]; draw(); });
+    const q=d.querySelector('#bdAdd'), sg=d.querySelector('#bdSugg'); let rows=[]; const add=p=>{ keep(); const k=fbKey(p.ikey); comp[k]=(comp[k]||0)+1; draw(); setTimeout(()=>{ const a=$('#bdAdd'); if(a) a.focus(); },60); };
+    q.addEventListener('input',()=>{ rows=q.value.trim()?searchProducts(q.value,12):[]; if(!rows.length){ sg.classList.add('hide'); return; } sg.innerHTML=rows.map((v,i)=>'<button class="mpick" data-i="'+i+'">'+img(v.image)+'<div><div class="pn">'+nm(v)+'</div><div class="pv">'+esc(varOf(v.variation))+'</div></div><span class="pt">'+(comp[fbKey(v.ikey)]?'in the bundle × '+comp[fbKey(v.ikey)]:'')+'</span></button>').join(''); sg.classList.remove('hide'); sg.querySelectorAll('.mpick').forEach(x=>x.onmousedown=e=>{ e.preventDefault(); add(rows[+x.dataset.i]); }); });
+    q.addEventListener('blur',()=>setTimeout(()=>sg.classList.add('hide'),150));
+    q.addEventListener('keydown',e=>{ if(e.key!=='Enter') return; e.preventDefault(); const v=q.value.trim(); if(!v) return; const bk=BC[norm(v)]||[]; if(bk.length&&INV[bk[0]]){ add(INV[bk[0]]); return; } const r=searchProducts(v,12); if(r.length===1) add(r[0]); else if(!r.length){ beep('warn'); toast('Nothing matches "'+v+'"','warn'); } });
+    d.querySelector('#bdOk').onclick=async()=>{ if(busy) return; keep(); const n=name.trim(); if(n.length<2){ toast('Name the bundle','warn'); return; } if(!Object.keys(comp).length){ toast('Add at least one product','warn'); return; }
+      const dup=bdefList().find(x=>x.id!==id&&norm(x.name)===norm(n)); if(dup&&!confirm('There is already a bundle called “'+dup.name+'”.\nSave another one with the same name?')) return;
+      busy=true; const ref=id?R.child('bundleDefs/'+id):R.child('bundleDefs').push(); const rec={name:n,bc,items:comp,by:MY_NAME,at:Date.now(),createdAt:(cur&&cur.createdAt)||Date.now()};
+      try{ await ref.set(rec); BDEFS[ref.key]=rec; alog(cur?'bundle_edit':'bundle_new',{text:n+' · '+bundleContents(comp),ref:ref.key}); closeModal(); toast('Bundle “'+n+'” saved','ok'); if(after) after(ref.key); else if(screen==='bundles') renderBundles(); }catch(e){ busy=false; toast('Not saved: '+(e.message||e),'err',5000); } };
+    setTimeout(()=>{ (name?q:d.querySelector('#bdName')).focus(); },50); };
+  draw(); }
+/* building a game: take a bundle from the catalog, or make a new one (it is saved to the catalog too) */
+function pickBundleForGame(preK){ const s=SUBS[curGame]; if(!s) return; const items=s.items||{}; const resv=bundleReserved(s); const list=bdefList(); let q='';
+  const can=b=>{ const ks=Object.keys(b.items||{}); if(!ks.length) return 0; return Math.max(0,Math.min.apply(null,ks.map(k=>Math.floor(((+items[k]||0)-(resv[k]||0))/(+b.items[k]||1))))); };
+  const d=modal('<h2>🧩 Add a bundle to the game</h2><p class="sub" style="font-size:13px">Pick a saved bundle, scan its barcode, or make a new one. “can make” = how many the free products of this game are enough for.</p>'+
+    '<div class="row" style="margin-top:8px"><input id="pbQ" class="tinput" style="flex:1" placeholder="Find by name or scan the bundle barcode…" autocomplete="off"><button class="btn primary" id="pbNew">＋ New bundle</button></div><div class="mlist" id="pbList" style="margin-top:10px"></div><div class="row" style="margin-top:12px"><button class="btn ghost sm" id="pbAll">⚙ Manage all bundles</button><div class="spacer"></div><button class="btn ghost" id="pbX">Cancel</button></div>',true);
+  const use=b=>{ closeModal(); editBundle(null,null,b); };
+  const draw=()=>{ const nq=norm(q); const rows=list.filter(b=>!nq||norm(b.name).includes(nq)||String(b.bc||'')===q.trim()); const host=d.querySelector('#pbList');
+    host.innerHTML=rows.length?rows.map((b,i)=>{ const c=can(b); const miss=Object.keys(b.items||{}).filter(k=>!(+items[k])); return '<button class="mpick" data-i="'+i+'"><div style="width:44px;height:44px;border-radius:8px;background:#231a3a;display:grid;place-items:center;font-size:22px">🧩</div><div><div class="pn">'+esc(b.name)+' <span class="mono mini">'+esc(b.bc||'')+'</span></div><div class="pv">'+esc(bundleContents(b.items))+(miss.length?'<br><span style="color:var(--warn)">not in the game yet: '+esc(miss.map(k=>itemInfo(k).name).join(', '))+'</span>':'')+'</div></div><span class="pt'+(c?' here':'')+'"'+(c?'':' style="color:var(--err)"')+'>can make '+fmt(c)+'</span></button>'; }).join('')
+      :'<div class="empty" style="padding:16px">'+(list.length?'Nothing matches.':'No saved bundles yet — press ＋ New bundle.')+'</div>';
+    host.querySelectorAll('.mpick').forEach(x=>x.onclick=()=>use(rows[+x.dataset.i])); };
+  const inp=d.querySelector('#pbQ'); inp.addEventListener('input',()=>{ q=inp.value; draw(); }); inp.addEventListener('keydown',e=>{ if(e.key!=='Enter') return; e.preventDefault(); const b=bdefByCode(inp.value); if(b){ use(b); return; } const nq=norm(inp.value); const r=list.filter(x=>norm(x.name).includes(nq)); if(r.length===1) use(r[0]); });
+  d.querySelector('#pbNew').onclick=()=>{ const pre=preK?{items:{[preK]:1}}:null; editBundleDef(null,id=>{ editBundle(null,null,Object.assign({id},BDEFS[id])); },pre); };
+  d.querySelector('#pbAll').onclick=()=>openBundles('game'); d.querySelector('#pbX').onclick=closeModal; draw(); setTimeout(()=>inp.focus(),50); }
+function editBundle(bid,preK,def){ const s=SUBS[curGame]; const b=bid?Object.assign({},(s.bundles||{})[bid]):(def?{name:def.name,items:Object.assign({},def.items||{}),count:1,def:def.id,bc:def.bc||null}:{name:'',items:{},count:1}); const comp=Object.assign({},b.items||{}); if(preK&&!comp[preK]) comp[preK]=1; const items=s.items||{}; let count=+b.count||1;
   const resvAll=bundleReserved(s); const own={}; if(bid){ const ob=(s.bundles||{})[bid]||{}; for(const k in (ob.items||{})) own[k]=(+ob.count||0)*(+ob.items[k]||1); } const freeFor=k=>(+items[k]||0)-(resvAll[k]||0)+(own[k]||0);
-  const draw=()=>{ const keys=Object.keys(comp); const d=modal('<h2>🎁 '+(bid?'Edit bundle':'Create bundle')+'</h2><div class="fld"><label>Bundle name</label><input id="bnName" class="tinput" style="font-family:var(--body)" value="'+esc(b.name)+'" placeholder="e.g. Starter bundle"></div>'+
+  const draw=()=>{ const keys=Object.keys(comp); const d=modal('<h2>🧩 '+(bid?'Edit bundle in this game':'Add bundle to this game')+'</h2>'+(b.bc?'<p class="mini" style="margin:0 0 4px">Barcode <span class="mono">'+esc(b.bc)+'</span> · <a href="#" id="bnLabel">🖨 print its label</a></p>':'')+'<div class="fld"><label>Bundle name</label><input id="bnName" class="tinput" style="font-family:var(--body)" value="'+esc(b.name)+'" placeholder="e.g. Starter bundle"></div>'+
       '<div class="fld"><label>Bundles prepared (physically made)</label><input id="bnCount" class="bigqty" type="number" min="0" value="'+count+'"></div>'+
       '<div class="fld"><label>Contents (per bundle)</label>'+(keys.length?keys.map(k=>'<div class="row" style="margin-top:6px"><span style="flex:1">'+nm(itemInfo(k))+' <span class="mini">free in game '+fmt(freeFor(k))+'</span></span><input class="qi" data-ck="'+esc(k)+'" type="number" min="1" value="'+comp[k]+'"><button class="btn sm ghost" data-cdel="'+esc(k)+'">✕</button></div>').join(''):'<p class="mini">Nothing yet — add products from the game below.</p>')+'</div>'+
       '<div style="position:relative;margin-top:10px"><input id="bnQ" class="tinput" style="width:100%" placeholder="Add a product from the game…" autocomplete="off"><div class="sugg hide" id="bnSugg"></div></div>'+
       '<div class="row" style="margin-top:16px"><button class="btn primary lg" id="bnOk" style="flex:1">Save bundle</button><button class="btn ghost" id="bnX">Cancel</button></div>');
+    { const pl=d.querySelector('#bnLabel'); if(pl) pl.onclick=e=>{ e.preventDefault(); printBundleLabels({name:d.querySelector('#bnName').value||b.name,bc:b.bc},Math.max(1,int(d.querySelector('#bnCount').value))); }; }
     d.querySelector('#bnX').onclick=closeModal; d.querySelector('#bnCount').addEventListener('change',()=>{ count=Math.max(0,int(d.querySelector('#bnCount').value)); }); d.querySelectorAll('[data-ck]').forEach(i=>i.addEventListener('change',()=>{ comp[i.dataset.ck]=Math.max(1,int(i.value)); })); d.querySelectorAll('[data-cdel]').forEach(x=>x.onclick=()=>{ delete comp[x.dataset.cdel]; b.name=d.querySelector('#bnName').value; count=Math.max(0,int(d.querySelector('#bnCount').value)); draw(); });
     const q=d.querySelector('#bnQ'), sg=d.querySelector('#bnSugg'); q.addEventListener('input',()=>{ const nv=norm(q.value); const rows=Object.keys(items).filter(k=>+items[k]&&!comp[k]&&(norm(itemInfo(k).name).includes(nv)||(BC[nv]||[]).some(x=>fbKey(x)===k))).slice(0,10); if(!nv||!rows.length){ sg.classList.add('hide'); return; } sg.innerHTML=rows.map((k,i)=>'<button class="mpick" data-i="'+i+'">'+img(itemInfo(k).image)+'<div><div class="pn">'+nm(itemInfo(k))+'</div><div class="pv">'+esc(varOf(itemInfo(k).variation))+'</div></div><span class="pt">'+fmt(items[k])+'</span></button>').join(''); sg.classList.remove('hide'); sg.querySelectorAll('.mpick').forEach(x=>x.onmousedown=e=>{ e.preventDefault(); comp[rows[+x.dataset.i]]=1; b.name=d.querySelector('#bnName').value; draw(); }); }); q.addEventListener('blur',()=>setTimeout(()=>sg.classList.add('hide'),150));
     d.querySelector('#bnOk').onclick=async()=>{ const name=d.querySelector('#bnName').value.trim(); count=Math.max(0,int(d.querySelector('#bnCount').value)); if(name.length<2){ toast('Name the bundle','warn'); return; } if(!Object.keys(comp).length){ toast('Add at least one product','warn'); return; }
       const short=Object.keys(comp).filter(k=>count*(+comp[k]||1)>freeFor(k)); if(short.length){ toast('Not enough in the game for '+count+' bundle(s): '+short.map(k=>itemInfo(k).name+' (free '+fmt(freeFor(k))+', need '+fmt(count*(+comp[k]||1))+')').join(', '),'err',6000); return; }
-      const ref=bid?R.child('subs/'+curGame+'/bundles/'+bid):R.child('subs/'+curGame+'/bundles').push(); await ref.set({name,items:comp,count,by:MY_NAME,at:Date.now()}); closeModal(); toast('Bundle "'+name+'" × '+count+' saved','ok'); };
+      const ref=bid?R.child('subs/'+curGame+'/bundles/'+bid):R.child('subs/'+curGame+'/bundles').push(); const rec={name,items:comp,count,by:MY_NAME,at:Date.now()}; if(b.def) rec.def=b.def; if(b.bc) rec.bc=b.bc; await ref.set(rec); closeModal(); toast('Bundle "'+name+'" × '+count+' saved','ok'); };
     setTimeout(()=>{ if(!b.name) d.querySelector('#bnName').focus(); else q.focus(); },50); };
   draw(); }
-function addToBundle(k){ const s=SUBS[curGame]; const bl=s.bundles||{}; const ids=Object.keys(bl); if(!ids.length){ editBundle(null,k); return; }
-  const d=modal('<h2>🎁 Add to bundle</h2><div class="pcard">'+img(itemInfo(k).image)+'<div><div class="cn">'+nm(itemInfo(k))+'</div></div></div><div class="mlist">'+ids.map(id=>'<button class="mpick" data-b="'+id+'"><div style="width:44px;height:44px;border-radius:8px;background:#231a3a;display:grid;place-items:center;font-size:22px">🎁</div><div><div class="pn">'+esc(bl[id].name)+'</div><div class="pv">'+Object.keys(bl[id].items||{}).length+' product(s)'+((bl[id].items||{})[k]?' · already has '+bl[id].items[k]:'')+'</div></div><span class="pt"></span></button>').join('')+'<button class="mpick" data-b=""><div style="width:44px;height:44px;border-radius:8px;background:var(--raised);display:grid;place-items:center;font-size:22px">＋</div><div><div class="pn">New bundle</div></div><span class="pt"></span></button></div>');
-  d.querySelectorAll('[data-b]').forEach(x=>x.onclick=()=>{ closeModal(); editBundle(x.dataset.b||null,k); }); }
+function addToBundle(k){ const s=SUBS[curGame]; const bl=s.bundles||{}; const ids=Object.keys(bl); if(!ids.length){ pickBundleForGame(k); return; }
+  const d=modal('<h2>🧩 Add to bundle</h2><div class="pcard">'+img(itemInfo(k).image)+'<div><div class="cn">'+nm(itemInfo(k))+'</div></div></div><div class="mlist">'+ids.map(id=>'<button class="mpick" data-b="'+id+'"><div style="width:44px;height:44px;border-radius:8px;background:#231a3a;display:grid;place-items:center;font-size:22px">🧩</div><div><div class="pn">'+esc(bl[id].name)+'</div><div class="pv">'+Object.keys(bl[id].items||{}).length+' product(s)'+((bl[id].items||{})[k]?' · already has '+bl[id].items[k]:'')+'</div></div><span class="pt"></span></button>').join('')+'<button class="mpick" data-b=""><div style="width:44px;height:44px;border-radius:8px;background:var(--raised);display:grid;place-items:center;font-size:22px">＋</div><div><div class="pn">New bundle</div></div><span class="pt"></span></button></div>');
+  d.querySelectorAll('[data-b]').forEach(x=>x.onclick=()=>{ closeModal(); if(x.dataset.b) editBundle(x.dataset.b,k); else pickBundleForGame(k); }); }
 /* ---- selling inside a live game ---- */
 async function recordSale(rec){ await R.child('subs/'+curGame+'/sales').push(Object.assign({ts:Date.now(),by:MY_NAME},rec)); }
+/* ============================================================
+   GAME · SALES REPORT — after the stream: type what was sold (from the platform's report),
+   recount what came back, return the leftovers (all, or product by product).
+   Sold numbers use the same records as a sale made by scan, so stock, history and the
+   game totals stay in step. Typing a smaller number takes the difference back.
+   ============================================================ */
+let grBusy=false;
+function grSingleSold(s,k){ let via=0; const sb=s.soldBundles||{}, bl=s.bundles||{}; for(const bid in sb){ const b=bl[bid]; if(b&&b.items&&b.items[k]) via+=(+sb[bid]||0)*(+b.items[k]||1); } return {total:+((s.sold||{})[k])||0, via, single:Math.max(0,(+((s.sold||{})[k])||0)-via)}; }
+/* the first number typed fixes the starting stock, if the game was never started by a streamer */
+async function grEnsureStart(s){ if(unitsOf(s.start||{})) return; const items=s.items||{}, start={}; for(const k in items) if(+items[k]) start[k]=+items[k];
+  const up={start,startedAt:Date.now(),startedBy:MY_NAME,room:s.at}; if(gameStatus(s)!=='live'){ up.status='ended'; up.endedAt=Date.now(); up.endedBy=MY_NAME; up.editing=null; }
+  await R.child('subs/'+curGame).update(up); Object.assign(s,up); await R.child('subs/'+curGame+'/log').push({at:Date.now(),by:MY_NAME,text:'sales report opened · starting stock fixed at '+fmt(unitsOf(start))+' units'}); }
+async function grSetSingle(k,val){ const s=SUBS[curGame]; if(!s||grBusy) return; const cur=grSingleSold(s,k).single; const n=int(val); if(String(val).trim()===''||n<0||qtyBad(n)){ toast('Type a whole number','warn'); renderGame(); return; } const d=n-cur; if(!d) return;
+  const it=itemInfo(k); const free=freeOf(s,k);
+  if(d>free&&!confirm('Only '+fmt(free)+' of '+it.name+' are in the game outside bundles.\nRecord '+fmt(d)+' more sold anyway (the game goes negative)?')){ renderGame(); return; }
+  grBusy=true; try{ await grEnsureStart(s);
+    if(d>0){ await sellUnits(k,d,'sales report · '+s.name); await recordSale({item:k,name:it.name,qty:d,report:true}); }
+    else { const sh=openShiftAt(s.at); await postEvent({item:INV_FB[k]||k,qty:-d,from:null,to:'sub:'+curGame,kind:'sale',note:'sales report corrected · '+s.name,ch:'game',shift:sh?sh.id:null}); await R.child('subs/'+curGame+'/sold/'+fbKey(k)).transaction(c=>((+c||0)+d)||null); await recordSale({item:k,name:it.name+' · corrected in the sales report',qty:d,report:true,reversed:true}); }
+    toast(it.name+' · sold '+fmt(n),'ok',1600); }catch(e){ toast('Not saved: '+(e.message||e),'err',5000); } grBusy=false; renderGame(); }
+async function grSetBundle(bid,val){ const s=SUBS[curGame]; if(!s||grBusy) return; const b=(s.bundles||{})[bid]; if(!b) return; const cur=+((s.soldBundles||{})[bid])||0; const n=int(val); if(String(val).trim()===''||n<0||qtyBad(n)){ toast('Type a whole number','warn'); renderGame(); return; } const d=n-cur; if(!d) return;
+  const avail=+b.count||0, comp=b.items||{}; if(d>avail){ toast('Only '+fmt(avail)+' more bundle(s) were prepared','err',3500); renderGame(); return; }
+  grBusy=true; try{ await grEnsureStart(s);
+    if(d>0){ for(const k in comp) await sellUnits(k,d*(+comp[k]||1),'sales report · '+s.name+' · bundle '+b.name); await R.child('subs/'+curGame+'/bundles/'+bid+'/count').transaction(c=>Math.max(0,(+c||0)-d)); await R.child('subs/'+curGame+'/soldBundles/'+bid).transaction(c=>(+c||0)+d); await recordSale({bundle:bid,name:b.name,qty:d,items:comp,report:true}); }
+    else { const sh=openShiftAt(s.at); for(const k in comp){ const u=-d*(+comp[k]||1); await postEvent({item:INV_FB[k]||k,qty:u,from:null,to:'sub:'+curGame,kind:'sale',note:'sales report corrected · '+s.name+' · bundle '+b.name,ch:'game',shift:sh?sh.id:null}); await R.child('subs/'+curGame+'/sold/'+fbKey(k)).transaction(c=>((+c||0)-u)||null); }
+      await R.child('subs/'+curGame+'/soldBundles/'+bid).transaction(c=>((+c||0)+d)||null); await R.child('subs/'+curGame+'/bundles/'+bid+'/count').transaction(c=>(+c||0)-d); await recordSale({bundle:bid,name:b.name+' · corrected in the sales report',qty:d,items:comp,report:true,reversed:true}); }
+    toast('🧩 '+b.name+' · sold '+fmt(n),'ok',1600); }catch(e){ toast('Not saved: '+(e.message||e),'err',5000); } grBusy=false; renderGame(); }
+function renderGameReport(s,st){ const sid='sub:'+curGame; const items=s.items||{}, sold=s.sold||{}, bundles=s.bundles||{}; const started=unitsOf(s.start||{})>0; const start=started?s.start:items; const live=st==='live', closed=st==='closed'; const H=gameHome(s), HN=esc(locName(H));
+  $('#gmTitle').textContent='🎲 '+s.name; const gs=$('#gmStat'); gs.className='gstat '+st; gs.textContent=st;
+  $('#gmActs').innerHTML='<button class="btn ghost sm" id="gmHist">🕘</button>';
+  const keys=Object.keys(Object.assign({},start,items,sold)).filter(k=>+start[k]||+items[k]||+sold[k]).sort((a,b)=>itemInfo(a).name.localeCompare(itemInfo(b).name)); const resv=bundleReserved(s);
+  const left=unitsOf(items); const q=norm(gmQ);
+  const lastCount=countsOf(sid)[0];
+  const kv='<div class="kvs"><div class="kv"><div class="n">'+fmt(unitsOf(start))+'</div><div class="l">'+(started?'start':'prepared')+'</div></div><div class="kv ok"><div class="n">'+fmt(unitsOf(sold))+'</div><div class="l">sold</div></div><div class="kv"><div class="n">'+fmt(left)+'</div><div class="l">left in the game</div></div><div class="kv"><div class="n" style="font-size:16px">'+esc(locName(s.at))+'</div><div class="l">now in</div></div></div>';
+  const tools=closed?'<div class="note info" style="margin-bottom:12px">This game is closed — the report is kept as it was.</div>':
+    '<div class="card" style="padding:14px;margin-bottom:12px"><div class="row" style="gap:10px;flex-wrap:wrap;align-items:center"><div style="flex:1;min-width:260px"><b>1 · Sold</b> <span class="mini">— type the number sold for each product or bundle, from the platform’s sales report.</span><br><b>2 · Recount</b> <span class="mini">— count what physically came back'+(lastCount?' · last count '+esc(fmtTime(lastCount.at||lastCount.startedAt)):'')+'.</span><br><b>3 · Return</b> <span class="mini">— send the leftovers back to '+HN+': everything, or ↩ on single products.</span></div>'+
+      '<button class="btn" id="grCount" '+(left&&!live?'':'disabled')+' title="'+(live?'End the game first':'Scan what is physically left and compare with the system')+'">🔢 Recount leftovers</button><button class="btn warn" id="grRetAll" '+(live?'disabled title="End the game first"':'')+'>↩ Return all leftovers to '+HN+' &amp; close</button><button class="btn ghost sm" id="grCsv">⬇ CSV</button></div></div>';
+  const bl=Object.keys(bundles).filter(bid=>!q||norm(bundles[bid].name).includes(q)).map(bid=>{ const b=bundles[bid], comp=b.items||{}, sb=+((s.soldBundles||{})[bid])||0, avail=+b.count||0;
+    return '<tr><td>🧩 <b>'+esc(b.name)+'</b><div class="mini">'+Object.keys(comp).map(k=>fmt(comp[k])+' × '+esc(itemInfo(k).name)).join(' + ')+'</div></td><td class="num">'+fmt(avail+sb)+'</td><td class="num">'+(closed?'<b>'+fmt(sb)+'</b>':'<input class="tinput" type="number" min="0" step="1" data-grb="'+bid+'" value="'+sb+'" style="width:92px;text-align:right">')+'</td><td class="num mini">—</td><td class="num"><b>'+fmt(avail)+'</b></td><td></td></tr>'; });
+  const rows=keys.filter(k=>!q||norm(itemInfo(k).name).includes(q)).map(k=>{ const it=itemInfo(k); const ss=grSingleSold(s,k); const lf=+items[k]||0, fr=lf-(resv[k]||0);
+    return '<tr><td><div class="row" style="gap:10px;flex-wrap:nowrap">'+img(it.image)+'<div><b>'+nm(it)+'</b><div class="mini">'+esc(varOf(it.variation))+'</div></div></div></td><td class="num">'+fmt(+start[k]||0)+'</td>'+
+      '<td class="num">'+(closed?'<b>'+fmt(ss.single)+'</b>':'<input class="tinput" type="number" min="0" step="1" data-grs="'+esc(k)+'" value="'+ss.single+'" style="width:92px;text-align:right">')+'</td><td class="num">'+(ss.via?fmt(ss.via):'<span class="mini">—</span>')+'</td>'+
+      '<td class="num"><b'+(lf<0?' style="color:var(--err)"':'')+'>'+fmt(lf)+'</b>'+(resv[k]?'<div class="mini">'+fmt(resv[k])+' in bundles</div>':'')+'</td><td class="num">'+(!closed&&!live&&fr>0?'<button class="btn sm warn" data-grret="'+esc(k)+'" title="Return this product to '+HN+'">↩ Return</button>':'')+'</td></tr>'; });
+  $('#gmBody').innerHTML=kv+tools+'<div class="row"><div class="seg" id="gmTabs"><button data-gt="sell">🧩 Bundles & singles</button><button data-gt="all">📋 All prepared</button><button data-gt="report" class="on">📊 Sales report</button></div><input id="gmQ" class="tinput" style="max-width:300px" placeholder="Filter the list…" value="'+esc(gmQ)+'" autocomplete="off"><span class="mini">'+keys.length+' product(s)'+(bl.length?' · '+Object.keys(bundles).length+' bundle(s)':'')+'</span></div>'+
+    '<div class="tscroll" style="max-height:none;margin-top:10px"><table id="grTbl"><thead><tr><th>Product</th><th class="num">'+(started?'Start':'Prepared')+'</th><th class="num">Sold</th><th class="num" title="Units of this product sold inside bundles">Sold in bundles</th><th class="num">Left</th><th></th></tr></thead><tbody>'+bl.join('')+(rows.length?rows.join(''):'<tr><td colspan="6"><div class="empty" style="padding:18px">'+(keys.length?'Nothing matches the filter.':'The game is empty.')+'</div></td></tr>')+'</tbody></table></div>';
+  $$('#grTbl td img').forEach(i=>{ i.style.width='40px'; i.style.height='40px'; i.style.borderRadius='8px'; i.style.objectFit='cover'; });
+  $('#gmHist').onclick=()=>openSubHistory(curGame);
+  $$('#gmTabs [data-gt]').forEach(b=>b.onclick=()=>{ gmTab=b.dataset.gt; renderGame(); });
+  const fq=$('#gmQ'); fq.addEventListener('input',()=>{ gmQ=fq.value; const p=fq.selectionStart; renderGame(); const n=$('#gmQ'); n.focus(); try{ n.setSelectionRange(p,p); }catch(e){} });
+  const wire=(sel,fn,attr)=>$$('#grTbl '+sel).forEach(i=>{ i.addEventListener('change',()=>fn(i.dataset[attr],i.value)); i.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); i.blur(); } }); i.addEventListener('focus',()=>i.select()); });
+  wire('[data-grs]',grSetSingle,'grs'); wire('[data-grb]',grSetBundle,'grb');
+  $$('#grTbl [data-grret]').forEach(b=>b.onclick=()=>askSubReturn(curGame,b.dataset.grret));
+  const gc=$('#grCount'); if(gc) gc.onclick=()=>openCount(sid,{title:'🔢 Recount leftovers · '+s.name,intro:'Scan what physically came back from the game. If the count differs from the system, the difference is recorded — usually a sale that is missing from the report.'});
+  const ra=$('#grRetAll'); if(ra) ra.onclick=()=>returnSubAll(curGame);
+  const cs=$('#grCsv'); if(cs) cs.onclick=()=>{ const out=[['Game','Product','Variation',started?'Start':'Prepared','Sold (single)','Sold in bundles','Sold total','Left']]; keys.forEach(k=>{ const it=itemInfo(k), ss=grSingleSold(s,k); out.push([s.name,it.name,varOf(it.variation),+start[k]||0,ss.single,ss.via,ss.total,+items[k]||0]); });
+    Object.keys(bundles).forEach(bid=>{ const b=bundles[bid], sb=+((s.soldBundles||{})[bid])||0; out.push([s.name,'BUNDLE · '+b.name,'',(+b.count||0)+sb,sb,'',sb,+b.count||0]); }); csv(out,'game sales report '+s.name.replace(/[\\/:*?"<>|]/g,' ')+'.csv'); };
+}
 async function sellUnits(k,n,note){ const sid='sub:'+curGame; const sh=openShiftAt(SUBS[curGame].at); await postEvent({item:INV_FB[k]||k,qty:n,from:sid,to:null,kind:'sale',note,ch:'game',shift:sh?sh.id:null}); await R.child('subs/'+curGame+'/sold/'+fbKey(k)).transaction(c=>(+c||0)+n); }
 function askSell(k){ const s=SUBS[curGame]; const it=itemInfo(k); const have=freeOf(s,k);
   const d=modal('<h2>💲 Sell</h2><div class="pcard">'+img(it.image)+'<div><div class="cn">'+nm(it)+'</div><div class="cv">'+esc(varOf(it.variation))+'</div><div class="cv">Free (outside bundles): <b style="color:var(--ink)">'+fmt(have)+'</b></div></div></div><input id="slQ" class="bigqty" type="number" min="1" max="'+have+'" value="1"><div class="row"><button class="btn sm" data-q="1">+1</button><button class="btn sm" data-q="5">+5</button><button class="btn sm" data-q="10">+10</button></div><button class="btn primary lg" id="slOk" style="width:100%;margin-top:12px">💲 Sold</button>');
@@ -1212,7 +1469,7 @@ function askSell(k){ const s=SUBS[curGame]; const it=itemInfo(k); const have=fre
   const ok=async()=>{ const n=int(inp.value); if(n<1) return; if(n>have&&!confirm('Only '+fmt(have)+' left in the game. Sell '+n+' anyway (goes negative)?')) return; d.querySelector('#slOk').disabled=true; await sellUnits(k,n,'game · '+s.name); await recordSale({item:k,name:it.name,qty:n}); beep('ok'); closeModal(); toast('💲 '+n+' × '+it.name,'ok',1600); };
   d.querySelector('#slOk').onclick=ok; inp.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); ok(); } }); setTimeout(()=>{ inp.focus(); inp.select(); },50); }
 function askSellBundle(bid){ const s=SUBS[curGame]; const b=(s.bundles||{})[bid]; if(!b) return; const items=s.items||{}; const comp=b.items||{}; const avail=+b.count||0;
-  const d=modal('<h2>🎁 Sell bundle</h2><div class="pcard"><div style="width:84px;height:84px;border-radius:11px;background:#231a3a;display:grid;place-items:center;font-size:40px">🎁</div><div><div class="cn">'+esc(b.name)+'</div><div class="cv">'+Object.keys(comp).map(k=>fmt(comp[k])+' × '+nm(itemInfo(k))).join(' + ')+'</div><div class="cv">Prepared: <b style="color:var(--ink)">'+fmt(avail)+'</b></div></div></div><input id="sbQ" class="bigqty" type="number" min="1" max="'+avail+'" value="1"><button class="btn primary lg" id="sbOk" style="width:100%;margin-top:12px">💲 Sold</button>');
+  const d=modal('<h2>🧩 Sell bundle</h2><div class="pcard"><div style="width:84px;height:84px;border-radius:11px;background:#231a3a;display:grid;place-items:center;font-size:40px">🧩</div><div><div class="cn">'+esc(b.name)+'</div><div class="cv">'+Object.keys(comp).map(k=>fmt(comp[k])+' × '+nm(itemInfo(k))).join(' + ')+'</div><div class="cv">Prepared: <b style="color:var(--ink)">'+fmt(avail)+'</b></div></div></div><input id="sbQ" class="bigqty" type="number" min="1" max="'+avail+'" value="1"><button class="btn primary lg" id="sbOk" style="width:100%;margin-top:12px">💲 Sold</button>');
   const inp=d.querySelector('#sbQ'); const ok=async()=>{ const n=int(inp.value); if(n<1) return; if(n>avail){ toast('Only '+fmt(avail)+' bundle(s) prepared','err'); return; } d.querySelector('#sbOk').disabled=true; for(const k in comp) await sellUnits(k,n*(+comp[k]||1),'game · '+s.name+' · bundle '+b.name); await R.child('subs/'+curGame+'/bundles/'+bid+'/count').transaction(c=>Math.max(0,(+c||0)-n)); await R.child('subs/'+curGame+'/soldBundles/'+bid).transaction(c=>(+c||0)+n); await recordSale({bundle:bid,name:b.name,qty:n,items:comp}); beep('ok'); closeModal(); toast('💲 '+n+' × bundle '+b.name,'ok',1600); };
   d.querySelector('#sbOk').onclick=ok; inp.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); ok(); } }); setTimeout(()=>{ inp.focus(); inp.select(); },50); }
 async function undoSale(id){ const s=SUBS[curGame]; const x=(s.sales||{})[id]; if(!x||x.reversed) return; if(!confirm('Reverse this sale ('+x.qty+' × '+x.name+')?')) return; const sid='sub:'+curGame;
@@ -1397,7 +1654,8 @@ function renderLoc(){
   const strm=isStreamer(); ['days','log'].forEach(t=>$('#lcTabs [data-t="'+t+'"]').classList.toggle('hide',strm)); if(strm&&(lcTab==='days'||lcTab==='log')) lcTab='stock';
   $('#lcTabs [data-t="shift"]').classList.add('hide'); if(lcTab==='shift') lcTab='stock';   /* shifts are retired: streamers no longer scan sales in the app */
   $('#lcTabs [data-t="sales"]').classList.toggle('hide',l.kind!=='stream'); if(lcTab==='sales'&&l.kind!=='stream') lcTab='stock';
-  $('#lcTabs [data-t="subs"]').textContent=l.id===SLAB_LOC?'🪪 Slabs':(l.kind==='stream'||PLAN_LOCS.includes(l.id))?'🎲 Games':l.kind==='show'?'🚐 Shows':'🧺 Sub-locations';
+  $('#lcTabs [data-t="subs"]').textContent=l.id===SLAB_LOC?'🪪 Slabs':(l.kind==='stream'||PLAN_LOCS.includes(l.id))?'🎲 Games · 🪟 Displays':l.kind==='show'?'🚐 Shows':'🧺 Sub-locations';
+  $('#lcDisplay').classList.toggle('hide',curLoc==='warehouse'||l.id===SLAB_LOC||isStreamer());
   if(l.id===SLAB_LOC){ $('#lcNewSub').classList.add('hide'); $('#lcGame').classList.add('hide'); }
   $$('#lcTabs button').forEach(b=>b.classList.toggle('on',b.dataset.t===lcTab));
   /* drop targets: other locations + sub-locations here */
@@ -1409,8 +1667,13 @@ function renderLoc(){
 function dropSideHTML(what){ if(!PLAN_LOCS.includes(curLoc)||isStreamer()) return '';
   const rooms=LOCS.filter(x=>x.id!==curLoc&&x.id!=='warehouse'&&(what==='product'||x.kind!=='show'));
   const here=what==='product'?subsAt(curLoc):[];
-  return '<aside class="dropside"><div class="mini" style="margin-bottom:8px">'+(what==='game'?'Drag a game onto a room to move it there whole:':'Drag a product onto:')+'</div>'+rooms.map(x=>{ const g=gamesAt(x.id).length; return '<span class="chip" data-drop="'+x.id+'">'+x.icon+' '+esc(x.name)+(what==='game'&&g?' <span class="mini">· '+g+' game'+(g===1?'':'s')+'</span>':'')+'</span>'; }).join('')+
-    (here.length?'<div class="mini" style="margin:10px 0 6px">Games here:</div>'+here.map(s=>'<span class="chip sub" data-drop="sub:'+s.id+'">'+(s.kind==='game'?'🎲':'🧺')+' '+esc(s.name)+'</span>').join(''):'')+'</aside>'; }
+  return '<aside class="dropside"><div class="mini" style="margin-bottom:8px">'+(what==='game'?'Drag a game onto a room to move it there whole:':'Drag a product onto:')+'</div>'+rooms.map(x=>{ const gl=what==='game'?subsAt(x.id).filter(z=>z.kind==='game'||z.kind==='display'):[]; return '<span class="chip" data-drop="'+x.id+'">'+x.icon+' '+esc(x.name)+(gl.length?' <span class="mini">· '+gl.length+'</span>':'')+'</span>'+
+        gl.map(z=>'<span class="chip sub" data-gosub="'+z.id+'" style="margin-left:14px;cursor:pointer" title="Open '+esc(z.name)+'">'+subIcon(z)+' '+esc(z.name)+' <span class="mini">›</span></span>').join(''); }).join('')+
+    (here.length?'<div class="mini" style="margin:10px 0 6px">Games &amp; displays here — click to open:</div>'+here.map(s=>'<span class="chip sub" data-drop="sub:'+s.id+'" data-gosub="'+s.id+'" style="cursor:pointer" title="Open '+esc(s.name)+' · or drag a product onto it">'+subIcon(s)+' '+esc(s.name)+' <span class="mini">›</span></span>').join(''):'')+'</aside>'; }
+const subIcon=s=>s.kind==='game'?'🎲':s.kind==='display'?'🪟':s.kind==='show'?'🚐':'🧺';
+/* a click on a game / display in the left list: a game opens its own screen, anything else opens in the tab of its room */
+function goSub(id){ const s=SUBS[id]; if(!s) return; if(s.kind==='game'){ openGame(id,'loc'); return; } if(s.at!==curLoc){ if(!canLoc(s.at)){ toast('Your role has no access to '+locName(s.at),'warn'); return; } curLoc=s.at; } lcTab='subs'; expandedSub=id; show('loc'); renderLoc(); const el=$('#lcBody .subcard'); if(el) el.scrollIntoView({behavior:'smooth',block:'nearest'}); }
+document.addEventListener('click',e=>{ const c=e.target.closest&&e.target.closest('[data-gosub]'); if(c && !(typeof dnd!=='undefined'&&dnd&&dnd.moved)) goSub(c.dataset.gosub); });
 function renderStock(body){
   const m=itemsAt(curLoc), res=reservedAt(curLoc); const q=norm(lcQ);
   let keys=Object.keys(m).filter(k=>m[k]); if(q) keys=keys.filter(k=>norm(itemInfo(k).name).includes(q)||norm(itemInfo(k).variation).includes(q)||barcodesOf(itemInfo(k).barcode).some(b=>b.includes(q)));
@@ -1431,7 +1694,7 @@ function elsewhereHTML(q){ const rows=searchProducts(q,8); const parts=[]; rows.
 const isBoxLike=k=>{ const it=itemInfo(k); if(BOXES[fbKey(k)]) return true; if(it.tmp) return false; return !/\bpacks?\s*$/i.test(String(it.name).trim()); };
 function rowHTML(k,qty,reserved,loc){ const it=itemInfo(k); const at=loc||curLoc; const ro=at==='warehouse'||isStreamer(); const ready=qty-(reserved||0); const canOpen=!ro&&isBoxLike(k)&&(isSub(at)||['stockroom','gamearea','tiktok1','ebay','whatnot'].includes(at));
   return '<div class="irow" data-k="'+esc(k)+'" data-loc="'+esc(at)+'">'+img(it.image)+'<div><div class="nm">'+nm(it)+'</div><div class="vr">'+esc(varOf(it.variation))+(it.barcode?' · <span class="mono">'+esc(barcodesOf(it.barcode)[0]||'')+'</span>':'')+(reserved?' · <span style="color:var(--warn)">reserved '+fmt(reserved)+' · ready '+fmt(ready)+'</span>':'')+'</div></div>'+
-    '<div class="q'+(qty<0?' neg':(reserved?' res':''))+'">'+fmt(qty)+'<small>units</small></div><div class="acts">'+(ro?'':'<span class="grip" title="Drag to another location">⠿</span>'+(canOpen?(qty>0?'<button class="btn sm warn" data-open="'+esc(k)+'" title="Open box → packs">📦 Open</button>':'<button class="btn sm ghost" disabled title="Nothing to open: the stock here is '+fmt(qty)+'. Enter the real quantity first (Count or ✎).">📦 Open</button>'):'')+'<button class="btn sm" data-tr="'+esc(k)+'">⇄</button>'+(isAdmin()?'<button class="btn sm ghost" data-adj="'+esc(k)+'" title="Correct">✎</button>':''))+'</div></div>'; }
+    '<div class="q'+(qty<0?' neg':(reserved?' res':''))+'">'+fmt(qty)+'<small>units</small></div><div class="acts">'+(ro?'':'<span class="grip" title="Drag to another location">⠿</span>'+(canOpen?(qty>0?'<button class="btn sm warn" data-open="'+esc(k)+'" title="Open box → packs">📦 Open</button>':'<button class="btn sm ghost" disabled title="Nothing to open: the stock here is '+fmt(qty)+'. Enter the real quantity first (Count or ✎).">📦 Open</button>'):'')+(isSub(at)&&qty>0?'<button class="btn sm warn" data-subret1="'+esc(k)+'" title="Return this product to '+esc(locName(gameHome(subOf(at))))+'">↩</button>':'')+'<button class="btn sm" data-tr="'+esc(k)+'">⇄</button>'+(isAdmin()?'<button class="btn sm ghost" data-adj="'+esc(k)+'" title="Correct">✎</button>':''))+'</div></div>'; }
 function wireRows(sel,loc){ $$(sel+' [data-open]').forEach(b=>b.onclick=()=>openBoxAt(loc,b.dataset.open)); $$(sel+' [data-tr]').forEach(b=>b.onclick=()=>openTransfer(b.dataset.tr,loc)); $$(sel+' [data-adj]').forEach(b=>b.onclick=()=>openAdjust(b.dataset.adj,loc)); }
 function renderSubs(body){ if(isStreamer()){ renderStreamerGames(body); return; }
   const subs=subsAt(curLoc); const closed=Object.keys(SUBS).filter(id=>SUBS[id].status==='closed'&&(SUBS[id].returnedTo===curLoc||SUBS[id].at===curLoc)).map(id=>Object.assign({id},SUBS[id])).sort((a,b)=>(b.closedAt||0)-(a.closedAt||0)).slice(0,20);
@@ -1439,7 +1702,9 @@ function renderSubs(body){ if(isStreamer()){ renderStreamerGames(body); return; 
   body.innerHTML=(side?'<div class="withside">'+side+'<div class="mainside">':'')+(subs.length?'<p class="mini" style="margin:0 0 8px">Tap a tile to see what is inside. '+(side?'Drag a tile onto a room on the left to move the whole game there.':'Use “Move whole sub to…” inside the tile to move it.')+'</p><div class="stiles">'+subs.map(s=>stileHTML(s)).join('')+'</div>':'<div class="empty">'+(gm?'No games here yet. Press <b>🎲 Plan a game</b> to build one — it appears here and can be dragged onto a room.':'No sub-locations here. Create one for a game or a show, then move products into it.')+'</div>')+(open?subHTML(open):'')+
     (closed.length?'<h2 style="margin-top:22px">Closed</h2>'+closed.map(s=>'<div class="subcard" style="opacity:.7"><div class="sh"><span class="sn">'+esc(s.name)+'</span><span class="badge muted">closed '+esc(fmtTime(s.closedAt))+'</span><div class="spacer"></div><button class="btn sm ghost" data-subhist="'+s.id+'">🕘 History</button></div></div>').join(''):'')+(side?'</div></div>':'');
   $$('#lcBody [data-stile]').forEach(t=>t.onclick=e=>{ if(e.target.closest('button,select')) return; expandedSub=expandedSub===t.dataset.stile?null:t.dataset.stile; renderSubs(body); const el=$('#lcBody .subcard'); if(el) el.scrollIntoView({behavior:'smooth',block:'nearest'}); });
-  subs.forEach(s=>{ const items=s.items||{}; const keys=Object.keys(items).filter(k=>items[k]).sort((a,b)=>itemInfo(a).name.localeCompare(itemInfo(b).name)); const host=body.querySelector('[data-sublist="'+s.id+'"]'); if(host) host.innerHTML=keys.length?keys.map(k=>rowHTML(k,items[k],0,'sub:'+s.id)).join(''):'<div class="empty" style="padding:16px">Empty — drag products here from the Stock tab.</div>'; wireRows('[data-sublist="'+s.id+'"]','sub:'+s.id); });
+  subs.forEach(s=>{ const items=s.items||{}; const keys=Object.keys(items).filter(k=>items[k]).sort((a,b)=>itemInfo(a).name.localeCompare(itemInfo(b).name)); const host=body.querySelector('[data-sublist="'+s.id+'"]'); if(host) host.innerHTML=keys.length?keys.map(k=>rowHTML(k,items[k],0,'sub:'+s.id)).join(''):'<div class="empty" style="padding:16px">'+(s.kind==='display'?'Empty — press <b>＋ Add products</b>.':'Empty — drag products here from the Stock tab.')+'</div>'; wireRows('[data-sublist="'+s.id+'"]','sub:'+s.id); });
+  $$('#lcBody [data-dispadd]').forEach(b=>b.onclick=()=>openDisplayAdd(b.dataset.dispadd));
+  $$('#lcBody [data-subret1]').forEach(b=>b.onclick=()=>askSubReturn(String(b.closest('.irow').dataset.loc).slice(4), b.dataset.subret1));
   $$('#lcBody [data-submove]').forEach(sl=>sl.onchange=()=>{ if(sl.value) moveSub(sl.dataset.submove,sl.value); });
   $$('#lcBody [data-subret]').forEach(b=>b.onclick=()=>returnSubAll(b.dataset.subret));
   $$('#lcBody [data-subhist]').forEach(b=>b.onclick=()=>openSubHistory(b.dataset.subhist));
@@ -1454,19 +1719,24 @@ function renderStreamerGames(body){ const loc=curLoc; const shOpen=shiftOpenIn(l
     const keys=Object.keys(items).filter(k=>+items[k]).sort((a,b)=>itemInfo(a).name.localeCompare(itemInfo(b).name));
     return '<div class="subcard"'+(isPast?' style="opacity:.75"':'')+'><div class="sh" data-gexp="'+g.id+'" style="cursor:pointer"><span class="sn">🎲 '+esc(g.name)+'</span><span class="gstat '+st+'">'+st+'</span><span class="pill">'+(start?'start <b>'+fmt(start)+'</b> · sold <b>'+fmt(sold)+'</b> · left <b>':'units <b>')+fmt(unitsOf(items))+'</b></span><span class="pill">'+Object.keys(g.bundles||{}).length+' bundle(s)</span><div class="spacer"></div>'+(isPast?'<button class="btn sm ghost" data-subhist="'+g.id+'">🕘 History</button>':'')+'<span class="mini">'+(on?'▾':'▸')+'</span></div>'+
       (on?'<div class="list" style="margin-top:8px">'+(keys.length?keys.map(k=>rowHTML(k,items[k],0,'sub:'+g.id)).join(''):'<div class="empty" style="padding:14px">Empty.</div>')+'</div>':'')+'</div>'; };
-  body.innerHTML=(cur.length?cur.map(g=>card(g,false)).join(''):'<div class="empty">No current or planned games in '+esc(locName(loc))+'. Games are planned in the Stockroom and moved here whole.</div>')+
+  const disp=subsAt(loc).filter(x=>x.kind==='display');
+  const dcard=x=>{ const items=x.items||{}; const on=expandedSub===x.id; const keys=Object.keys(items).filter(k=>+items[k]).sort((a,b)=>itemInfo(a).name.localeCompare(itemInfo(b).name));
+    return '<div class="subcard"><div class="sh" data-gexp="'+x.id+'" style="cursor:pointer"><span class="sn">🪟 '+esc(x.name)+'</span><span class="badge sub">display</span><span class="pill">'+keys.length+' products · <b>'+fmt(unitsOf(items))+'</b> units</span><div class="spacer"></div><span class="mini">'+(on?'▾':'▸')+'</span></div>'+(on?'<div class="list" style="margin-top:8px">'+(keys.length?keys.map(k=>rowHTML(k,items[k],0,'sub:'+x.id)).join(''):'<div class="empty" style="padding:14px">Empty.</div>')+'</div>':'')+'</div>'; };
+  body.innerHTML=(disp.length?'<h2 style="margin:0 0 8px">Displays</h2>'+disp.map(dcard).join('')+'<h2 style="margin:18px 0 8px">Games</h2>':'')+(cur.length?cur.map(g=>card(g,false)).join(''):'<div class="empty">No current or planned games in '+esc(locName(loc))+'. Games are planned in the Stockroom and moved here whole.</div>')+
     '<div style="margin-top:20px;text-align:center"><button class="btn ghost" id="sgPast">'+(showPastGames?'▴ Hide past games':'🕘 Show past games ('+past.length+')')+'</button></div>'+
     (showPastGames?(past.length?'<h2 style="margin-top:14px">Past games</h2>'+past.map(g=>card(g,true)).join(''):'<p class="mini" style="text-align:center">No past games here.</p>'):'');
   body.querySelectorAll('[data-gexp]').forEach(h=>h.onclick=e=>{ if(e.target.closest('button')) return; expandedSub=expandedSub===h.dataset.gexp?null:h.dataset.gexp; renderStreamerGames(body); });
   body.querySelectorAll('[data-subhist]').forEach(b=>b.onclick=()=>openSubHistory(b.dataset.subhist));
   body.querySelector('#sgPast').onclick=()=>{ showPastGames=!showPastGames; renderStreamerGames(body); }; }
 function stileHTML(s){ const items=s.items||{}; const u=unitsOf(items); const g=s.kind==='game'; const st=gameStatus(s); const n=Object.keys(items).filter(k=>+items[k]).length; const on=expandedSub===s.id;
-  return '<div class="stile'+(on?' on':'')+'" data-stile="'+s.id+'" data-subdrag="'+s.id+'"><div class="st-ic">'+(g?'🎲':s.kind==='show'?'🚐':'🧺')+'</div><div><div class="st-n">'+esc(s.name)+'</div><div class="st-m">'+(g?'<span class="gstat '+st+'">'+st+'</span> ':'<span class="badge sub">'+esc(s.kind)+'</span> ')+n+' items · <b>'+fmt(u)+'</b> units'+(s.start&&unitsOf(s.start)?' · sold '+fmt(unitsOf(s.sold||{})):'')+'</div></div><div class="st-go">'+(on?'▾':'▸')+'</div></div>'; }
+  return '<div class="stile'+(on?' on':'')+'" data-stile="'+s.id+'" data-subdrag="'+s.id+'"><div class="st-ic">'+subIcon(s)+'</div><div><div class="st-n">'+esc(s.name)+'</div><div class="st-m">'+(g?'<span class="gstat '+st+'">'+st+'</span> ':'<span class="badge sub">'+esc(s.kind)+'</span> ')+n+' items · <b>'+fmt(u)+'</b> units'+(s.start&&unitsOf(s.start)?' · sold '+fmt(unitsOf(s.sold||{})):'')+'</div></div><div class="st-go">'+(on?'▾':'▸')+'</div></div>'; }
 function subHTML(s){ const items=s.items||{}; const u=unitsOf(items); const sold=unitsOf(s.sold||{}), start=unitsOf(s.start||{}); const g=s.kind==='game'; const st=gameStatus(s);
-  return '<div class="subcard"><div class="sh"><span class="sn">'+(g?'🎲 ':'🧺 ')+esc(s.name)+'</span>'+(g?'<span class="gstat '+st+'">'+st+'</span>':'<span class="badge sub">'+esc(s.kind)+'</span>')+'<span class="pill">now <b>'+fmt(u)+'</b></span>'+(start?'<span class="pill">start <b>'+fmt(start)+'</b> · sold <b>'+fmt(sold)+'</b></span>':'')+'<div class="spacer"></div>'+
+  return '<div class="subcard"><div class="sh"><span class="sn">'+subIcon(s)+' '+esc(s.name)+'</span>'+(g?'<span class="gstat '+st+'">'+st+'</span>':'<span class="badge sub">'+esc(s.kind)+'</span>')+'<span class="pill">now <b>'+fmt(u)+'</b></span>'+(start?'<span class="pill">start <b>'+fmt(start)+'</b> · sold <b>'+fmt(sold)+'</b></span>':'')+'<div class="spacer"></div>'+
     (g?'<button class="btn sm'+(st==='live'?' primary':'')+'" data-gopen="'+s.id+'">'+(st==='live'?'💲 Sell':'🎲 Open game')+'</button>':'')+(g&&(st==='ready'||st==='ended')&&(LOC_BY_ID[s.at]||{}).kind==='stream'?'<button class="btn sm primary" data-gstart="'+s.id+'">▶ Start game</button>':'')+
-    '<select class="sel" data-submove="'+s.id+'" style="min-width:150px"><option value="">Move whole sub to…</option>'+LOCS.filter(l=>l.id!==s.at&&l.id!=='warehouse'&&(l.kind!=='show'||s.kind==='show')).map(l=>'<option value="'+l.id+'">'+l.icon+' '+esc(l.name)+'</option>').join('')+'</select>'+
-    (s.at===gameHome(s)?'<button class="btn sm warn" data-subret="'+s.id+'">↩ Return all to '+esc(locName(gameHome(s)))+'</button>':'')+'<button class="btn sm ghost" data-subhist="'+s.id+'">🕘</button></div><div class="list" data-sublist="'+s.id+'"></div></div>'; }
+    '<select class="sel" data-submove="'+s.id+'" style="min-width:150px"><option value="">Move whole '+(g?'game':s.kind==='display'?'display':'sub')+' to…</option>'+LOCS.filter(l=>l.id!==s.at&&l.id!=='warehouse'&&(l.kind!=='show'||s.kind==='show')).map(l=>'<option value="'+l.id+'">'+l.icon+' '+esc(l.name)+'</option>').join('')+'</select>'+
+    (s.kind==='display'?'<button class="btn sm primary" data-dispadd="'+s.id+'">＋ Add products</button>':'')+
+    ((s.at===gameHome(s)||s.kind==='display')?'<button class="btn sm warn" data-subret="'+s.id+'">↩ Return all to '+esc(locName(gameHome(s)))+'</button>':'')+'<button class="btn sm ghost" data-subhist="'+s.id+'">🕘</button></div>'+
+    (s.kind==='display'?'<p class="mini" style="margin:8px 0 0">Samples set aside to show on stream. They are not part of the stock of '+esc(locName(s.at))+' until they are returned — ↩ on a line returns that product.</p>':'')+'<div class="list" data-sublist="'+s.id+'"></div></div>'; }
 function openSubHistory(id){ const s=SUBS[id]; const evs=LEDGER.filter(e=>e.from==='sub:'+id||e.to==='sub:'+id); const log=Object.values(s.log||{});
   modal('<h2>🧺 '+esc(s.name)+'</h2><p class="sub" style="font-size:13px">'+esc(s.kind)+' · created '+esc(fmtTime(s.createdAt))+' by '+esc(s.createdBy||'')+(s.closedAt?' · closed '+esc(fmtTime(s.closedAt)):'')+' · now in '+esc(locName(s.at))+'</p>'+
     (log.length?'<div style="margin-top:8px">'+log.map(x=>'<div class="logrow"><span class="lt">'+esc(fmtTime(x.at))+'</span><span>'+esc(x.text)+'</span><span class="mini">'+esc(x.by||'')+'</span></div>').join('')+'</div>':'')+
@@ -1618,7 +1888,7 @@ $('#camClose').onclick=closeCam;
 /* ============================================================
    ROUTER + WIRING
    ============================================================ */
-function renderCurrent(){ if(!MY_NAME) return; if((screen==='disc'||screen==='history'||screen==='import')&&!isAdmin()){ goMenu(); return; } if(screen==='menu') renderMenu(); else if(screen==='loc') renderLoc(); else if(screen==='overview') renderOverview(); else if(screen==='disc') renderDisc(); else if(screen==='history') renderHistory(); else if(screen==='game') renderGame(); else if(screen==='import') renderImport(); }
+function renderCurrent(){ if(!MY_NAME) return; if((screen==='disc'||screen==='history'||screen==='import')&&!isAdmin()){ goMenu(); return; } if(screen==='menu') renderMenu(); else if(screen==='loc') renderLoc(); else if(screen==='overview') renderOverview(); else if(screen==='disc') renderDisc(); else if(screen==='history') renderHistory(); else if(screen==='game') renderGame(); else if(screen==='bundles') renderBundles(); else if(screen==='import') renderImport(); }
 function goMenu(){ show('menu'); renderMenu(); }
 /* links from other apps: #loc/<id>/<tab> · #game/<subId> */
 function applyHash(){ if(!MY_NAME) return; const m=/^#loc\/([a-z0-9]+)(?:\/(stock|subs|sales|days|log))?$/.exec(location.hash||''); if(m&&LOC_BY_ID[m[1]]){ openLoc(m[1]); if(m[2]){ lcTab=m[2]; renderLoc(); } return; } const g=/^#game\/(.+)$/.exec(location.hash||''); if(g&&SUBS[decodeURIComponent(g[1])]) openGame(decodeURIComponent(g[1]),'menu'); }
@@ -1627,11 +1897,11 @@ $('#homeBtn').onclick=goMenu; $('#lcBack').onclick=goMenu; $('#ovBack').onclick=
 
 $('#mOverview').onclick=()=>{ show('overview'); renderOverview(); }; $('#mDisc').onclick=()=>{ if(!isAdmin()) return; show('disc'); renderDisc(); }; $('#mHistory').onclick=()=>{ if(!isAdmin()) return; show('history'); renderHistory(); };
 $('#mImport').onclick=()=>{ if(!isAdmin()) return; show('import'); $('#imDay').value=$('#imDay').value||dayOf(Date.now()); renderImport(); }; $('#imBack').onclick=goMenu; buildImportFields(); $('#imDay').addEventListener('change',renderImport); $('#imCsv').onclick=exportStockCsv;
-$('#mGame').onclick=openPlanGame; $('#lcGame').onclick=openPlanGame; $('#mBoxes').onclick=openBoxSettings;
+$('#mGame').onclick=openPlanGame; $('#lcGame').onclick=openPlanGame; $('#mBundles').onclick=()=>openBundles('menu'); $('#bdBack').onclick=()=>{ if(bdBackTo==='game'&&SUBS[curGame]){ show('game'); renderGame(); } else goMenu(); }; $('#bdNew').onclick=()=>editBundleDef(null); $('#bdQ').addEventListener('input',e=>{ bdQ=e.target.value; renderBundles(); }); $('#mBoxes').onclick=openBoxSettings;
 $('#gmBack').onclick=()=>{ if(gmBackTo==='loc'&&curLoc){ show('loc'); lcTab='subs'; renderLoc(); } else goMenu(); };
 $('#mReload').onclick=()=>{ if(isAdmin()) loadInventory(true); };
 $$('#lcTabs button').forEach(b=>b.onclick=()=>{ lcTab=b.dataset.t; renderLoc(); });
-$('#lcCount').onclick=()=>openCount(curLoc); $('#lcCountHist').onclick=()=>openCountHistory(curLoc); $('#lcNewSub').onclick=()=>openNewSub(curLoc);
+$('#lcCount').onclick=()=>openCount(curLoc); $('#lcCountHist').onclick=()=>openCountHistory(curLoc); $('#lcNewSub').onclick=()=>openNewSub(curLoc); $('#lcDisplay').onclick=()=>openNewDisplay(curLoc);
 $('#ovDate').addEventListener('change',e=>{ ovDay=e.target.value||dayOf(Date.now()); renderOverview(); }); $('#ovToday').onclick=()=>{ ovDay=dayOf(Date.now()); renderOverview(); }; $('#ovQ').addEventListener('input',renderOverview); $('#ovZero').addEventListener('change',renderOverview); $('#ovSort').addEventListener('change',renderOverview); [['ovType','type'],['ovBrand','brand'],['ovSeries','series']].forEach(([id,f])=>$('#'+id).addEventListener('change',e=>{ ovF[f]=e.target.value; renderOverview(); })); $('#ovClear').onclick=()=>{ ovF.type=ovF.brand=ovF.series=''; $('#ovQ').value=''; $('#ovSort').value='name'; renderOverview(); };
 $('#ovCsv').onclick=()=>{ const t=$('#ovTbl'); csv([['Item','Type','Brand','Series',...t._cols.map(c=>c.name),'Total']].concat(t._rows.map(r=>[itemInfo(r.k).name+(varOf(itemInfo(r.k).variation)?' · '+itemInfo(r.k).variation:''),itemInfo(r.k).type||'',itemInfo(r.k).brand||'',itemInfo(r.k).series||'',...r.vals,r.vals.reduce((a,b)=>a+b,0)])),'cph_inventory_'+ovDay+'.csv'); };
 $$('#dcTabs button').forEach(b=>b.onclick=()=>{ dcTab=b.dataset.t; renderDisc(); }); $('#dcUpd').onclick=()=>{ toast('Reading Daily SOH…','info',1500); refreshDSOH(true); };
@@ -1643,7 +1913,7 @@ $('#hsCsv').onclick=()=>{ const l=$('#hsBody')._rows||[]; csv([['Time','Kind','I
 /* ---- sign-in through CALIPOKE ADMIN ---- */
 (function boot(){ applyLogo(); $('#buildTag').textContent='v'+BUILD;
   CPAuth.init({app:'inventory',header:'#hdrUser',onReady:u=>{ MY_NAME=u.name; MY_ROLE=u.role==='admin'?'admin':'staff';
-    $('#meName').textContent=u.name+' · '+u.roleLabel; ['mBoxes','mImport','mDisc','mHistory','mReload'].forEach(id=>$('#'+id).classList.toggle('hide',u.role!=='admin')); $('#mGame').classList.toggle('hide',u.role==='streamer');
+    $('#meName').textContent=u.name+' · '+u.roleLabel; ['mBoxes','mImport','mDisc','mHistory','mReload'].forEach(id=>$('#'+id).classList.toggle('hide',u.role!=='admin')); $('#mGame').classList.toggle('hide',u.role==='streamer'); $('#mBundles').classList.toggle('hide',u.role==='streamer');
     $('#appHeader').classList.remove('hide'); $('#appMain').classList.remove('hide'); goMenu(); connect(); setTimeout(applyHash,400); }}); })();
 </script>
 </body>
