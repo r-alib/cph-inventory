@@ -147,6 +147,7 @@ td.editable{cursor:pointer} td.editable:hover{background:#1a2338;box-shadow:inse
   html,body{background:#fff!important;color:#000!important;margin:0!important;padding:0!important}
   header,main,.modal,#toasts,#lightbox,#modalHost{display:none!important}
   #printArea{position:static!important;left:auto!important;visibility:visible!important;z-index:auto!important} }
+.cpy{cursor:copy;border-bottom:1px dashed transparent} .cpy:hover{border-bottom-color:var(--faint)} .cpy.done{color:var(--ok)}
 </style>
 </head>
 <body>
@@ -172,6 +173,7 @@ td.editable{cursor:pointer} td.editable:hover{background:#1a2338;box-shadow:inse
       <button class="btn" id="mHistory">🕘 History</button>
       <button class="btn primary" id="mGame">🎲 Plan a game</button>
       <button class="btn" id="mBundles" title="Saved bundles: name, barcode, contents — used when a game is built">🧩 Bundles</button>
+      <button class="btn" id="mNaming" title="How to name games, bundles and TikTok stream listings">📘 Naming guide</button>
       <button class="btn hide" id="mBoxes" title="Packs per box (admin)">📦 Box settings</button>
       <button class="btn hide" id="mImport" title="Paste stock per location from a spreadsheet (admin)">📋 Import stock</button>
       <button class="btn ghost" id="mReload" title="Re-read the inventory sheet">⟳ Catalog</button>
@@ -183,7 +185,7 @@ td.editable{cursor:pointer} td.editable:hover{background:#1a2338;box-shadow:inse
   <section id="screen-loc" class="hide">
     <div class="topbar"><button class="btn ghost" id="lcBack">← Locations</button><h1 style="margin:0" id="lcTitle">—</h1><div class="spacer"></div>
       <div class="pill">Items <b id="lcItems">0</b> · units <b id="lcUnits">0</b></div>
-      <button class="btn sm" id="lcReq">🚚 Request</button><button class="btn sm" id="lcCount">🔢 Count</button><button class="btn sm ghost" id="lcCountHist" title="Finished counts of this location: open one, download it as CSV">🗂 Past counts</button><button class="btn sm" id="lcNewSub">＋ Sub-location</button><button class="btn sm" id="lcDisplay" title="A display: sample products set aside to show on stream — kept apart from the stock of the room">🪟 New display</button><button class="btn sm primary" id="lcGame">🎲 Plan a game</button></div>
+      <button class="btn sm" id="lcReq">🚚 Request</button><button class="btn sm" id="lcCount">🔢 Count</button><button class="btn sm ghost" id="lcCountHist" title="Finished counts of this location: open one, download it as CSV">🗂 Past counts</button><button class="btn sm" id="lcNewSub">＋ Sub-location</button><button class="btn sm" id="lcDisplay" title="A display: sample products set aside to show on stream — kept apart from the stock of the room">🪟 New display</button><button class="btn sm" id="lcBundles" title="Saved bundles: name, barcode, contents">🧩 Bundles</button><button class="btn sm primary" id="lcGame">🎲 Plan a game</button></div>
     <div class="chipbar" id="lcDrop"></div>
     <div class="seg" id="lcTabs" style="margin-bottom:12px"><button data-t="shift" class="hide">⏱ Shift</button><button data-t="stock" class="on">📦 Inventory</button><button data-t="subs">🧺 Sub-locations</button><button data-t="disp">🪟 Displays</button><button data-t="sales" class="hide">💲 Sales</button><button data-t="days">🗓 Days</button><button data-t="log">🕘 Movements</button></div>
     <div id="lcBody"></div>
@@ -193,7 +195,7 @@ td.editable{cursor:pointer} td.editable:hover{background:#1a2338;box-shadow:inse
     <div class="topbar"><button class="btn ghost" id="ovBack">← Locations</button><h1 style="margin:0">📊 All locations</h1><div class="spacer"></div>
       <div class="daybar"><span class="mini">Day</span><input type="date" id="ovDate"><button class="btn sm" id="ovToday">Today</button></div>
       <button class="btn sm" id="ovCsv">⬇ CSV</button></div>
-    <div class="row"><input id="ovQ" class="tinput" style="max-width:360px" placeholder="Find an item…" autocomplete="off"><select id="ovType" class="sel"></select><select id="ovBrand" class="sel"></select><select id="ovSeries" class="sel"></select><select id="ovSort" class="sel"><option value="name">Sort: name</option><option value="type">Group by type</option><option value="brand">Group by brand</option><option value="series">Group by series</option></select><button class="btn sm ghost" id="ovClear">✕ Clear</button><label class="mini" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="ovZero"> show items that are 0 everywhere</label></div>
+    <div class="row"><input id="ovQ" class="tinput" style="max-width:360px" placeholder="Find by name or barcode…" autocomplete="off"><select id="ovType" class="sel"></select><select id="ovBrand" class="sel"></select><select id="ovSeries" class="sel"></select><select id="ovSort" class="sel"><option value="name">Sort: name</option><option value="type">Group by type</option><option value="brand">Group by brand</option><option value="series">Group by series</option></select><button class="btn sm ghost" id="ovClear">✕ Clear</button><label class="mini" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="ovZero"> show items that are 0 everywhere</label></div>
     <div class="chipbar" id="ovChips" style="margin:8px 0 0"></div>
     <div class="tscroll"><table id="ovTbl"></table></div>
     <p class="mini" style="margin-top:10px">Columns = locations (sub-locations inside each location are included in its figure). Pick an earlier day to see the closing stock of that day.</p>
@@ -218,7 +220,7 @@ td.editable{cursor:pointer} td.editable:hover{background:#1a2338;box-shadow:inse
   </section>
 
   <section id="screen-bundles" class="hide">
-    <div class="topbar"><button class="btn ghost" id="bdBack">← Back</button><h1 style="margin:0">🧩 Bundles</h1><div class="spacer"></div><button class="btn primary" id="bdNew">＋ New bundle</button></div>
+    <div class="topbar"><button class="btn ghost" id="bdBack">← Back</button><h1 style="margin:0">🧩 Bundles</h1><div class="spacer"></div><button class="btn ghost" id="bdGuide">📘 Naming guide</button><button class="btn primary" id="bdNew">＋ New bundle</button></div>
     <p class="sub" style="font-size:13.5px;margin:0 0 12px">A bundle is set up once: its name, its own barcode and what is inside. When a game is built the bundle is picked from this list (or scanned by its barcode), and its label is scanned when the bundle is sold.</p>
     <div class="row"><input id="bdQ" class="tinput" style="max-width:380px" placeholder="Find a bundle by name, barcode or product…" autocomplete="off"><span class="mini" id="bdN"></span></div>
     <div id="bdBody" style="margin-top:12px"></div>
@@ -258,7 +260,7 @@ td.editable{cursor:pointer} td.editable:hover{background:#1a2338;box-shadow:inse
      packstation/transfers           → ready transfers become ledger events
    Day boundaries: calendar days (local time). Streamer rooms: day = day shift + night shift (build 3).
    ============================================================ */
-const BUILD='2026-11-24d · inventory shows what is in games and on displays';
+const BUILD='2026-11-24e · bundles into games & displays in one step · naming guide · All locations: short headers, barcode search, click to copy';
 const INV_CONFIG={apiKey:"AIzaSyAsTYwU0qABmXKuYSpyendwHw3djJc-Bqo",authDomain:"calipoke-inventory.firebaseapp.com",databaseURL:"https://calipoke-inventory-default-rtdb.firebaseio.com",projectId:"calipoke-inventory",storageBucket:"calipoke-inventory.firebasestorage.app",messagingSenderId:"156640764541",appId:"1:156640764541:web:833f96e4b0849b53454714"};
 const STATION_CONFIG={apiKey:"AIzaSyB2I2sR9czF6F29OZMyEZubmwQGP7nWFlc",authDomain:"calipoke-packstation.firebaseapp.com",databaseURL:"https://calipoke-packstation-default-rtdb.firebaseio.com",projectId:"calipoke-packstation",storageBucket:"calipoke-packstation.firebasestorage.app",messagingSenderId:"125288117157",appId:"1:125288117157:web:461b4d553e100c07b9ae4c"};
 const ROOT='inv', STATION_PATH='packstation';
@@ -588,6 +590,26 @@ function openNewDisplay(loc){
     await ref.set(rec); SUBS[ref.key]=SUBS[ref.key]||rec; alog('display_new',{text:n,loc,ref:ref.key}); closeModal(); toast('Display "'+n+'" created','ok'); lcTab='disp'; expandedSub=ref.key; renderLoc(); openDisplayAdd(ref.key); };
   d.querySelector('#ndGo').onclick=go; inp.addEventListener('keydown',e=>{ if(e.key==='Enter') go(); });
 }
+/* put a saved bundle on a display: its products × how many bundles, taken from the room or from the Stockroom */
+function openDisplayBundle(id){ const s0=SUBS[id]; if(!s0) return; const here=s0.at, srcs=[here].concat(here!=='stockroom'?['stockroom']:[]); const list=bdefList(); let q='', sel=null, n=1, busy=false;
+  const can=b=>{ const ks=Object.keys(b.items||{}); if(!ks.length) return 0; return Math.max(0,Math.min.apply(null,ks.map(k=>Math.floor(srcs.reduce((a,x)=>a+Math.max(0,readyAt(x,k)),0)/(+b.items[k]||1))))); };
+  const draw=()=>{ const d=modal('<h2>🧩 Add a bundle to '+esc(s0.name)+'</h2><p class="sub" style="font-size:13px">The products of the bundle are taken from '+srcs.map(x=>esc(locName(x))).join(', then ')+' and set aside in the display.</p>'+
+      (sel?'<div class="card" style="padding:12px;border-color:var(--accent)"><b>'+esc(sel.name)+'</b><div class="mini">'+esc(bundleContents(sel.items))+'</div><div class="row" style="margin-top:10px;gap:10px;align-items:center"><span class="mini">How many bundles</span><input id="dbN" class="tinput" type="number" min="1" max="'+can(sel)+'" value="'+Math.min(n,Math.max(1,can(sel)))+'" style="width:100px"><span class="mini">can make '+fmt(can(sel))+'</span><div class="spacer"></div><button class="btn primary" id="dbOk" '+(can(sel)?'':'disabled')+'>＋ Add to the display</button><button class="btn ghost" id="dbNo">Back</button></div></div>'
+        :'<div class="row" style="margin-top:8px"><input id="dbQ" class="tinput" style="flex:1" placeholder="Find by name or scan the bundle barcode…" autocomplete="off" value="'+esc(q)+'"></div><div class="mlist" id="dbList" style="margin-top:10px"></div>')+
+      '<div class="row" style="margin-top:12px"><button class="btn ghost sm" id="dbAll">⚙ Manage all bundles</button><div class="spacer"></div><button class="btn ghost" id="dbX">Close</button></div>',true);
+    d.querySelector('#dbX').onclick=()=>{ closeModal(); renderCurrent(); }; d.querySelector('#dbAll').onclick=()=>openBundles('loc');
+    if(sel){ d.querySelector('#dbNo').onclick=()=>{ sel=null; draw(); }; const inp=d.querySelector('#dbN');
+      d.querySelector('#dbOk').onclick=async()=>{ if(busy) return; n=int(inp.value); const mx=can(sel); if(n<1||n>mx){ toast('Enter 1 – '+mx,'warn'); return; } busy=true;
+        try{ for(const k in sel.items){ let need=n*(+sel.items[k]||1); for(const src of srcs){ if(!need) break; const t=Math.min(need,Math.max(0,readyAt(src,k))); if(t>0){ await postEvent({item:INV_FB[k]||k,qty:t,from:src,to:'sub:'+id,kind:'sub',note:'display · '+s0.name+' · bundle '+sel.name}); need-=t; } } }
+          await R.child('subs/'+id+'/log').push({at:Date.now(),by:MY_NAME,text:'bundle added: '+n+' × '+sel.name}); beep('ok'); toast('🧩 '+n+' × '+sel.name+' → '+s0.name,'ok',2400); busy=false; sel=null; n=1; draw(); }
+        catch(e){ busy=false; toast('Not saved: '+(e.message||e),'err',5000); } };
+      setTimeout(()=>{ inp.focus(); inp.select(); },50); return; }
+    const host=d.querySelector('#dbList'), inp=d.querySelector('#dbQ'); const rowsOf=()=>{ const nq=norm(q); return list.filter(b=>!nq||norm(b.name).includes(nq)||String(b.bc||'')===q.trim()); };
+    const fill=()=>{ const rows=rowsOf(); host.innerHTML=rows.length?rows.map((b,i)=>{ const c=can(b); return '<button class="mpick" data-i="'+i+'"><div style="width:44px;height:44px;border-radius:8px;background:#231a3a;display:grid;place-items:center;font-size:22px">🧩</div><div><div class="pn">'+esc(b.name)+' <span class="mono mini">'+esc(b.bc||'')+'</span></div><div class="pv">'+esc(bundleContents(b.items))+'</div></div><span class="pt'+(c?' here':'')+'"'+(c?'':' style="color:var(--err)"')+'>can make '+fmt(c)+'</span></button>'; }).join(''):'<div class="empty" style="padding:16px">'+(list.length?'Nothing matches.':'No saved bundles yet — create them in 🧩 Bundles.')+'</div>';
+      host.querySelectorAll('.mpick').forEach(x=>x.onclick=()=>{ sel=rows[+x.dataset.i]; draw(); }); };
+    inp.addEventListener('input',()=>{ q=inp.value; fill(); }); inp.addEventListener('keydown',e=>{ if(e.key!=='Enter') return; e.preventDefault(); const b=bdefByCode(inp.value); if(b){ sel=b; draw(); return; } const r=rowsOf(); if(r.length===1){ sel=r[0]; draw(); } });
+    fill(); setTimeout(()=>inp.focus(),50); };
+  draw(); }
 /* add products to a display: from the room it stands in, or straight from the Stockroom */
 function openDisplayAdd(id){ const s0=SUBS[id]; if(!s0) return; const here=s0.at, srcs=[here].concat(here!=='stockroom'?['stockroom']:[]);
   const d=modal('<h2>🪟 Add to '+esc(s0.name)+'</h2><p class="sub" style="font-size:13px">Scan or type a product. It is taken from '+srcs.map(x=>esc(locName(x))).join(' or ')+' and set aside in the display.</p>'+
@@ -1086,11 +1108,12 @@ function openPlanGame(){ if(!canPlanGame()){ toast('Games are planned in the Sto
   let at=(screen==='loc'&&places.includes(curLoc))?curLoc:places[0];
   const d=modal('<h2>🎲 Plan a game</h2><p class="sub" style="font-size:13px">The game is built from the products that are ready in the place you choose. When the list is done, mark it ready and move it whole to the streamer\'s room.</p>'+
     '<div class="fld"><label>Build it in</label><div class="chipsel" id="pgAt"></div></div>'+
-    '<div class="fld"><label>Game name</label><input id="pgName" class="tinput" style="font-family:var(--body)" placeholder="e.g. Koi Bag Game 11/12 · TT1"></div>'+
+    '<div class="fld"><label>Game name — start with the date <a href="#" id="pgGuide" class="mini" style="margin-left:6px">📘 naming guide</a></label><input id="pgName" class="tinput" style="font-family:var(--body)" value="'+todayMD()+' " placeholder="e.g. '+todayMD()+' Koi Bag Game · TT1"></div>'+
     '<div class="row" style="margin-top:16px"><button class="btn primary lg" id="pgGo" style="flex:1">Create & build the list</button><button class="btn ghost" id="pgX">Cancel</button></div>');
   const drawAt=()=>{ d.querySelector('#pgAt').innerHTML=places.map(x=>'<button class="chip'+(x===at?' on':'')+'" data-at="'+x+'">'+LOC_BY_ID[x].icon+' '+esc(locName(x))+'</button>').join(''); d.querySelectorAll('[data-at]').forEach(b=>b.onclick=()=>{ at=b.dataset.at; drawAt(); }); }; drawAt();
-  d.querySelector('#pgX').onclick=closeModal; const inp=d.querySelector('#pgName'); setTimeout(()=>inp.focus(),50);
-  const go=async()=>{ const n=inp.value.trim(); if(n.length<2){ toast('Enter a name','warn'); return; } const ref=R.child('subs').push(); await ref.set({name:n,kind:'game',at:at,home:at,status:'planning',createdAt:Date.now(),createdBy:MY_NAME,items:{}}); closeModal(); toast('Game "'+n+'" created in '+locName(at),'ok'); openGame(ref.key,screen==='game'?gmBackTo:screen); };
+  d.querySelector('#pgX').onclick=closeModal; const inp=d.querySelector('#pgName'); setTimeout(()=>{ inp.focus(); try{ inp.setSelectionRange(inp.value.length,inp.value.length); }catch(e){} },50);
+  let pgKeep=''; d.querySelector('#pgGuide').onclick=e=>{ e.preventDefault(); pgKeep=inp.value; openNamingGuide(); };
+  const go=async()=>{ const n=inp.value.trim(); if(n.length<2||/^\d{1,2}\/\d{1,2}$/.test(n)){ toast('Type the name of the game after the date','warn'); return; } if(!/^\d{1,2}[\/.-]\d{1,2}/.test(n)&&!confirm('Game names start with the date (for example “'+todayMD()+' '+n+'”).\n\nCreate it as “'+n+'” anyway?')) return; const ref=R.child('subs').push(); await ref.set({name:n,kind:'game',at:at,home:at,status:'planning',createdAt:Date.now(),createdBy:MY_NAME,items:{}}); closeModal(); toast('Game "'+n+'" created in '+locName(at),'ok'); openGame(ref.key,screen==='game'?gmBackTo:screen); };
   d.querySelector('#pgGo').onclick=go; inp.addEventListener('keydown',e=>{ if(e.key==='Enter') go(); });
 }
 function openGame(id,back){ curGame=id; gmBackTo=back&&back!=='game'?back:'menu'; gmQ=''; gmTab='sell'; show('game'); renderGame(); }
@@ -1341,6 +1364,20 @@ const bundleContents=items=>Object.keys(items||{}).map(k=>fmt(items[k])+' × '+i
 function bundleLabelHTML(b){ return '<div class="top">'+esc(String(b.name||'').toUpperCase())+'</div><div class="bars">'+barcodeSvg(String(b.bc)).svg+'</div><div class="hr">'+esc(b.bc)+'</div>'; }
 function printBundleLabels(b,copies){ if(!b||!b.bc){ toast('This bundle has no barcode yet — open it and save','warn'); return; } const n=Math.max(1,Math.min(200,int(copies)||1)); let out=''; for(let i=0;i<n;i++) out+='<div class="plabel">'+bundleLabelHTML(b)+'</div>';
   $('#printArea').innerHTML=out; toast('Paper 2.25 × 1.25 in · margins None · scale 100 %','ok',5000); setTimeout(()=>window.print(),80); }
+/* the default name of a bundle: "1 x 30th bb + 4 x 30th eng pack" */
+const bundleAutoName=items=>Object.keys(items||{}).map(k=>(+items[k]||1)+' x '+itemInfo(k).name).join(' + ');
+const todayMD=()=>{ const d=new Date(); return pad2(d.getMonth()+1)+'/'+pad2(d.getDate()); };
+function openNamingGuide(){ const ex=(a,b)=>'<div style="display:flex;gap:10px;align-items:baseline;margin-top:6px"><span class="badge '+(b?'ok':'err')+'" style="min-width:42px;text-align:center">'+(b?'yes':'no')+'</span><span class="mono" style="font-size:13.5px">'+esc(a)+'</span></div>';
+  const sec=(ic,t,rule,body)=>'<div class="card" style="padding:14px;margin-top:10px"><div style="font-family:var(--disp);font-weight:700;font-size:16px">'+ic+' '+t+'</div><div style="margin-top:4px">'+rule+'</div>'+body+'</div>';
+  const d=modal('<h2>📘 Naming guide</h2><p class="sub" style="font-size:13px;margin:0">One way of naming, so that a game, its bundles and the TikTok listings can be matched with the inventory without guessing.</p>'+
+    sec('🎲','Games','<b>Start with the date</b>, then what it is and the room.',ex(todayMD()+' Koi Bag Game · TT1',true)+ex('Koi Bag Game TT1',false))+
+    sec('🧩','Bundles','<b>Quantity x product + quantity x product</b> — product names as in the inventory. The system fills this in by itself when a bundle is created.',ex('1 x 30th bb + 4 x 30th eng pack',true)+ex('30th anniversary bundle',false))+
+    sec('🛒','Products in TikTok listings for a stream','<b>Start with <span class="mono">s-</span></b>, then the name exactly as in Daily SOH / Guide Book.',ex('s-30th bb',true)+ex('30th Anniversary Booster Box (stream)',false)+'<p class="mini" style="margin:8px 0 0">Tip: in <b>All locations</b> and in the Guide Book a click on a product name copies it — paste it after <span class="mono">s-</span>.</p>')+
+    '<div class="row" style="margin-top:14px"><div class="spacer"></div><button class="btn" id="ngX">Close</button></div>',true);
+  d.querySelector('#ngX').onclick=closeModal; }
+/* click a product name → the name goes to the clipboard (for TikTok listings: s- + the name) */
+async function copyText(t){ try{ await navigator.clipboard.writeText(t); return true; }catch(e){ try{ const a=document.createElement('textarea'); a.value=t; a.style.cssText='position:fixed;left:-9999px;top:0'; document.body.appendChild(a); a.select(); const ok=document.execCommand('copy'); a.remove(); return ok; }catch(e2){ return false; } } }
+document.addEventListener('click',async e=>{ const c=e.target.closest&&e.target.closest('[data-copy]'); if(!c) return; e.stopPropagation(); const ok=await copyText(c.dataset.copy); if(ok){ c.classList.add('done'); setTimeout(()=>c.classList.remove('done'),900); toast('Copied: '+c.dataset.copy,'ok',1400); } else toast('Could not copy — select the name by hand','warn'); });
 function openBundles(back){ bdBackTo=back||'menu'; show('bundles'); const q=$('#bdQ'); q.value=bdQ; renderBundles(); }
 function renderBundles(){ const all=bdefList(); const q=norm(bdQ); const list=all.filter(b=>!q||norm(b.name).includes(q)||String(b.bc||'').includes(bdQ.trim())||Object.keys(b.items||{}).some(k=>norm(itemInfo(k).name).includes(q)));
   $('#bdN').textContent=list.length+' of '+all.length+' bundle'+(all.length===1?'':'s');
@@ -1355,22 +1392,26 @@ function renderBundles(){ const all=bdefList(); const q=norm(bdQ); const list=al
   $$('#bdBody [data-bddel]').forEach(b=>b.onclick=async()=>{ const x=BDEFS[b.dataset.bddel]; if(!x||!confirm('Delete the bundle “'+x.name+'” from the list?\n\nGames that already use it keep their bundles; its barcode stops working for new games.')) return; await R.child('bundleDefs/'+b.dataset.bddel).remove(); alog('bundle_del',{text:x.name}); toast('Bundle deleted','ok'); });
 }
 /* create / edit a bundle of the catalog. after(id) is called when it is saved (used when a game is being built) */
-function editBundleDef(id,after,pre){ const cur=id?BDEFS[id]:null; let name=cur?cur.name:((pre&&pre.name)||''); const bc=(cur&&cur.bc)||genBundleCode(); const comp=Object.assign({},cur?cur.items:(pre&&pre.items)||{}); let busy=false;
-  const draw=()=>{ const keys=Object.keys(comp); const d=modal('<h2>🧩 '+(cur?'Edit bundle':'New bundle')+'</h2>'+
-      '<div class="fld"><label>Bundle name</label><input id="bdName" class="tinput" style="font-family:var(--body)" value="'+esc(name)+'" placeholder="e.g. Starter bundle · 3 packs + sleeve" autocomplete="off"></div>'+
+function editBundleDef(id,after,pre){ const cur=id?BDEFS[id]:null; const comp=Object.assign({},cur?cur.items:(pre&&pre.items)||{}); let name=cur?cur.name:((pre&&pre.name)||''); const bc=(cur&&cur.bc)||genBundleCode(); let busy=false;
+  let auto=!name||name===bundleAutoName(comp); if(auto) name=bundleAutoName(comp);   /* default name = quantity x product + … ; typing a name switches the automatic one off, clearing the field switches it back on */
+  const draw=()=>{ if(auto) name=bundleAutoName(comp); const keys=Object.keys(comp); const d=modal('<h2>🧩 '+(cur?'Edit bundle':'New bundle')+'</h2>'+
+      '<div class="fld"><label>Bundle name</label><input id="bdName" class="tinput" style="font-family:var(--body)" value="'+esc(name)+'" placeholder="filled in from the contents — 1 x product + 4 x product" autocomplete="off"><div class="mini" id="bdAuto" style="margin-top:4px"></div></div>'+
       '<div class="fld"><label>Barcode — made automatically, printed on a 2.25 × 1.25 in label</label><div class="row" style="gap:10px;align-items:center"><span class="mono" style="font-size:16px;font-weight:700">'+esc(bc)+'</span><div style="background:#fff;border-radius:6px;overflow:hidden"><div class="plabel" id="bdPrev" style="zoom:.6"></div></div><span class="mini">Copies</span><input id="bdCopies" class="tinput" type="number" min="1" max="200" value="1" style="width:70px"><button class="btn sm" id="bdPrint">🖨 Print</button></div></div>'+
       '<div class="fld"><label>Contents — per one bundle</label>'+(keys.length?keys.map(k=>'<div class="row" style="margin-top:6px"><span style="flex:1">'+nm(itemInfo(k))+' <span class="mini">'+esc(varOf(itemInfo(k).variation))+'</span></span><input class="qi" data-ck="'+esc(k)+'" type="number" min="1" value="'+comp[k]+'"><button class="btn sm ghost" data-cdel="'+esc(k)+'">✕</button></div>').join(''):'<p class="mini">Nothing yet — add products below.</p>')+'</div>'+
       '<div style="position:relative;margin-top:10px"><input id="bdAdd" class="tinput" style="width:100%" placeholder="Add a product: scan or type its name…" autocomplete="off"><div class="sugg hide" id="bdSugg"></div></div>'+
       '<div class="row" style="margin-top:16px"><button class="btn primary lg" id="bdOk" style="flex:1">Save bundle</button><button class="btn ghost" id="bdX">Cancel</button></div>');
-    const keep=()=>{ name=d.querySelector('#bdName').value; d.querySelectorAll('[data-ck]').forEach(i=>{ comp[i.dataset.ck]=Math.max(1,int(i.value)); }); };
-    const prev=()=>{ d.querySelector('#bdPrev').innerHTML=bundleLabelHTML({name:d.querySelector('#bdName').value||'BUNDLE',bc}); }; prev(); d.querySelector('#bdName').addEventListener('input',prev);
+    const keep=()=>{ const typed=d.querySelector('#bdName').value; d.querySelectorAll('[data-ck]').forEach(i=>{ comp[i.dataset.ck]=Math.max(1,int(i.value)); }); name=auto?bundleAutoName(comp):typed; };
+    const showAuto=()=>{ d.querySelector('#bdAuto').innerHTML=auto?'Named automatically from the contents. Type your own name to change it.':'Own name. <a href="#" id="bdReAuto">Use the automatic name</a>'; const ra=d.querySelector('#bdReAuto'); if(ra) ra.onclick=e=>{ e.preventDefault(); auto=true; keep(); d.querySelector('#bdName').value=name; showAuto(); prev(); }; };
+    d.querySelector('#bdName').addEventListener('input',e=>{ auto=!e.target.value.trim(); if(auto){ /* cleared → automatic again on the next change */ } showAuto(); });
+    d.querySelectorAll('[data-ck]').forEach(i=>i.addEventListener('change',()=>{ keep(); if(auto){ d.querySelector('#bdName').value=name; prev(); } }));
+    const prev=()=>{ d.querySelector('#bdPrev').innerHTML=bundleLabelHTML({name:d.querySelector('#bdName').value||'BUNDLE',bc}); }; prev(); showAuto(); d.querySelector('#bdName').addEventListener('input',prev);
     d.querySelector('#bdPrint').onclick=()=>{ keep(); if(name.trim().length<2){ toast('Name the bundle first','warn'); return; } printBundleLabels({name:name.trim(),bc},d.querySelector('#bdCopies').value); };
     d.querySelector('#bdX').onclick=closeModal; d.querySelectorAll('[data-cdel]').forEach(x=>x.onclick=()=>{ keep(); delete comp[x.dataset.cdel]; draw(); });
     const q=d.querySelector('#bdAdd'), sg=d.querySelector('#bdSugg'); let rows=[]; const add=p=>{ keep(); const k=fbKey(p.ikey); comp[k]=(comp[k]||0)+1; draw(); setTimeout(()=>{ const a=$('#bdAdd'); if(a) a.focus(); },60); };
     q.addEventListener('input',()=>{ rows=q.value.trim()?searchProducts(q.value,12):[]; if(!rows.length){ sg.classList.add('hide'); return; } sg.innerHTML=rows.map((v,i)=>'<button class="mpick" data-i="'+i+'">'+img(v.image)+'<div><div class="pn">'+nm(v)+'</div><div class="pv">'+esc(varOf(v.variation))+'</div></div><span class="pt">'+(comp[fbKey(v.ikey)]?'in the bundle × '+comp[fbKey(v.ikey)]:'')+'</span></button>').join(''); sg.classList.remove('hide'); sg.querySelectorAll('.mpick').forEach(x=>x.onmousedown=e=>{ e.preventDefault(); add(rows[+x.dataset.i]); }); });
     q.addEventListener('blur',()=>setTimeout(()=>sg.classList.add('hide'),150));
     q.addEventListener('keydown',e=>{ if(e.key!=='Enter') return; e.preventDefault(); const v=q.value.trim(); if(!v) return; const bk=BC[norm(v)]||[]; if(bk.length&&INV[bk[0]]){ add(INV[bk[0]]); return; } const r=searchProducts(v,12); if(r.length===1) add(r[0]); else if(!r.length){ beep('warn'); toast('Nothing matches "'+v+'"','warn'); } });
-    d.querySelector('#bdOk').onclick=async()=>{ if(busy) return; keep(); const n=name.trim(); if(n.length<2){ toast('Name the bundle','warn'); return; } if(!Object.keys(comp).length){ toast('Add at least one product','warn'); return; }
+    d.querySelector('#bdOk').onclick=async()=>{ if(busy) return; keep(); const n=name.trim(); if(!Object.keys(comp).length){ toast('Add at least one product','warn'); return; } if(n.length<2){ toast('Name the bundle','warn'); return; }
       const dup=bdefList().find(x=>x.id!==id&&norm(x.name)===norm(n)); if(dup&&!confirm('There is already a bundle called “'+dup.name+'”.\nSave another one with the same name?')) return;
       busy=true; const ref=id?R.child('bundleDefs/'+id):R.child('bundleDefs').push(); const rec={name:n,bc,items:comp,by:MY_NAME,at:Date.now(),createdAt:(cur&&cur.createdAt)||Date.now()};
       try{ await ref.set(rec); BDEFS[ref.key]=rec; alog(cur?'bundle_edit':'bundle_new',{text:n+' · '+bundleContents(comp),ref:ref.key}); closeModal(); toast('Bundle “'+n+'” saved','ok'); if(after) after(ref.key); else if(screen==='bundles') renderBundles(); }catch(e){ busy=false; toast('Not saved: '+(e.message||e),'err',5000); } };
@@ -1379,7 +1420,7 @@ function editBundleDef(id,after,pre){ const cur=id?BDEFS[id]:null; let name=cur?
 /* building a game: take a bundle from the catalog, or make a new one (it is saved to the catalog too) */
 function pickBundleForGame(preK){ const s=SUBS[curGame]; if(!s) return; const items=s.items||{}; const resv=bundleReserved(s); const list=bdefList(); let q='';
   const can=b=>{ const ks=Object.keys(b.items||{}); if(!ks.length) return 0; return Math.max(0,Math.min.apply(null,ks.map(k=>Math.floor(((+items[k]||0)-(resv[k]||0))/(+b.items[k]||1))))); };
-  const d=modal('<h2>🧩 Add a bundle to the game</h2><p class="sub" style="font-size:13px">Pick a saved bundle, scan its barcode, or make a new one. “can make” = how many the free products of this game are enough for.</p>'+
+  const d=modal('<h2>🧩 Add a bundle to the game</h2><p class="sub" style="font-size:13px">Pick a saved bundle, scan its barcode, or make a new one. “can make” = how many the products already in this game are enough for; whatever is missing is taken from the shelf when the bundle is saved.</p>'+
     '<div class="row" style="margin-top:8px"><input id="pbQ" class="tinput" style="flex:1" placeholder="Find by name or scan the bundle barcode…" autocomplete="off"><button class="btn primary" id="pbNew">＋ New bundle</button></div><div class="mlist" id="pbList" style="margin-top:10px"></div><div class="row" style="margin-top:12px"><button class="btn ghost sm" id="pbAll">⚙ Manage all bundles</button><div class="spacer"></div><button class="btn ghost" id="pbX">Cancel</button></div>',true);
   const use=b=>{ closeModal(); editBundle(null,null,b); };
   const draw=()=>{ const nq=norm(q); const rows=list.filter(b=>!nq||norm(b.name).includes(nq)||String(b.bc||'')===q.trim()); const host=d.querySelector('#pbList');
@@ -1400,7 +1441,14 @@ function editBundle(bid,preK,def){ const s=SUBS[curGame]; const b=bid?Object.ass
     d.querySelector('#bnX').onclick=closeModal; d.querySelector('#bnCount').addEventListener('change',()=>{ count=Math.max(0,int(d.querySelector('#bnCount').value)); }); d.querySelectorAll('[data-ck]').forEach(i=>i.addEventListener('change',()=>{ comp[i.dataset.ck]=Math.max(1,int(i.value)); })); d.querySelectorAll('[data-cdel]').forEach(x=>x.onclick=()=>{ delete comp[x.dataset.cdel]; b.name=d.querySelector('#bnName').value; count=Math.max(0,int(d.querySelector('#bnCount').value)); draw(); });
     const q=d.querySelector('#bnQ'), sg=d.querySelector('#bnSugg'); q.addEventListener('input',()=>{ const nv=norm(q.value); const rows=Object.keys(items).filter(k=>+items[k]&&!comp[k]&&(norm(itemInfo(k).name).includes(nv)||(BC[nv]||[]).some(x=>fbKey(x)===k))).slice(0,10); if(!nv||!rows.length){ sg.classList.add('hide'); return; } sg.innerHTML=rows.map((k,i)=>'<button class="mpick" data-i="'+i+'">'+img(itemInfo(k).image)+'<div><div class="pn">'+nm(itemInfo(k))+'</div><div class="pv">'+esc(varOf(itemInfo(k).variation))+'</div></div><span class="pt">'+fmt(items[k])+'</span></button>').join(''); sg.classList.remove('hide'); sg.querySelectorAll('.mpick').forEach(x=>x.onmousedown=e=>{ e.preventDefault(); comp[rows[+x.dataset.i]]=1; b.name=d.querySelector('#bnName').value; draw(); }); }); q.addEventListener('blur',()=>setTimeout(()=>sg.classList.add('hide'),150));
     d.querySelector('#bnOk').onclick=async()=>{ const name=d.querySelector('#bnName').value.trim(); count=Math.max(0,int(d.querySelector('#bnCount').value)); if(name.length<2){ toast('Name the bundle','warn'); return; } if(!Object.keys(comp).length){ toast('Add at least one product','warn'); return; }
-      const short=Object.keys(comp).filter(k=>count*(+comp[k]||1)>freeFor(k)); if(short.length){ toast('Not enough in the game for '+count+' bundle(s): '+short.map(k=>itemInfo(k).name+' (free '+fmt(freeFor(k))+', need '+fmt(count*(+comp[k]||1))+')').join(', '),'err',6000); return; }
+      const short=Object.keys(comp).filter(k=>count*(+comp[k]||1)>freeFor(k));
+      if(short.length){ /* take what is missing from the place the game is built from (and, for the Game Area, from the Stockroom behind it) */
+        const H=gHome(), fd=gFeeder(); const plan=[], bad=[];
+        short.forEach(k=>{ let miss=count*(+comp[k]||1)-freeFor(k); const a=Math.max(0,readyAt(H,k)), b=fd?Math.max(0,readyAt(fd,k)):0; const t1=Math.min(miss,a), t2=Math.min(miss-t1,b); if(t1+t2<miss) bad.push(itemInfo(k).name+' (need '+fmt(miss)+' more, '+locName(H)+' has '+fmt(a)+(fd?', '+locName(fd)+' '+fmt(b):'')+')'); else plan.push({k,t1,t2}); });
+        if(bad.length){ toast('Not enough for '+count+' bundle(s): '+bad.join('; '),'err',7000); return; }
+        if(!confirm('The game does not have enough products for '+count+' × “'+name+'”.\n\nTake the missing ones now?\n'+plan.map(x=>'• '+fmt(x.t1+x.t2)+' × '+itemInfo(x.k).name+' — from '+(x.t1?locName(H)+' '+fmt(x.t1):'')+(x.t1&&x.t2?' + ':'')+(x.t2?locName(fd)+' '+fmt(x.t2):'')).join('\n'))) return;
+        d.querySelector('#bnOk').disabled=true;
+        for(const x of plan){ const item=INV_FB[x.k]||x.k; if(x.t2) await postEvent({item,qty:x.t2,from:fd,to:H,kind:'transfer',note:'for game · '+s.name}); await postEvent({item,qty:x.t1+x.t2,from:H,to:'sub:'+curGame,kind:'sub',note:'bundle '+name+' · '+s.name}); } }
       const ref=bid?R.child('subs/'+curGame+'/bundles/'+bid):R.child('subs/'+curGame+'/bundles').push(); const rec={name,items:comp,count,by:MY_NAME,at:Date.now()}; if(b.def) rec.def=b.def; if(b.bc) rec.bc=b.bc; await ref.set(rec); closeModal(); toast('Bundle "'+name+'" × '+count+' saved','ok'); };
     setTimeout(()=>{ if(!b.name) d.querySelector('#bnName').focus(); else q.focus(); },50); };
   draw(); }
@@ -1661,6 +1709,7 @@ function renderLoc(){
   $('#lcDisplay').classList.toggle('hide',curLoc==='warehouse'||l.id===SLAB_LOC||isStreamer());
   { const noDisp=curLoc==='warehouse'||l.id===SLAB_LOC; $('#lcTabs [data-t="disp"]').classList.toggle('hide',noDisp); if(lcTab==='disp'&&noDisp) lcTab='stock'; const nd=subsAt(curLoc).filter(x=>x.kind==='display').length; $('#lcTabs [data-t="disp"]').textContent='🪟 Displays'+(nd?' · '+nd:''); }
   if(l.id===SLAB_LOC){ $('#lcNewSub').classList.add('hide'); $('#lcGame').classList.add('hide'); }
+  $('#lcBundles').classList.toggle('hide',!PLAN_LOCS.includes(l.id)||isStreamer());
   $$('#lcTabs button').forEach(b=>b.classList.toggle('on',b.dataset.t===lcTab));
   /* drop targets: other locations + sub-locations here */
   $('#lcDrop').innerHTML=''; $('#lcDrop').classList.add('hide');
@@ -1710,6 +1759,7 @@ function renderSubs(body){ if(isStreamer()){ renderStreamerGames(body); return; 
   $$('#lcBody [data-stile]').forEach(t=>t.onclick=e=>{ if(e.target.closest('button,select')) return; expandedSub=expandedSub===t.dataset.stile?null:t.dataset.stile; renderSubs(body); const el=$('#lcBody .subcard'); if(el) el.scrollIntoView({behavior:'smooth',block:'nearest'}); });
   subs.forEach(s=>{ const items=s.items||{}; const keys=Object.keys(items).filter(k=>items[k]).sort((a,b)=>itemInfo(a).name.localeCompare(itemInfo(b).name)); const host=body.querySelector('[data-sublist="'+s.id+'"]'); if(host) host.innerHTML=keys.length?keys.map(k=>rowHTML(k,items[k],0,'sub:'+s.id)).join(''):'<div class="empty" style="padding:16px">'+(s.kind==='display'?'Empty — press <b>＋ Add products</b>.':'Empty — drag products here from the Stock tab.')+'</div>'; wireRows('[data-sublist="'+s.id+'"]','sub:'+s.id); });
   $$('#lcBody [data-dispadd]').forEach(b=>b.onclick=()=>openDisplayAdd(b.dataset.dispadd));
+  $$('#lcBody [data-dispbundle]').forEach(b=>b.onclick=()=>openDisplayBundle(b.dataset.dispbundle));
   $$('#lcBody [data-subret1]').forEach(b=>b.onclick=()=>askSubReturn(String(b.closest('.irow').dataset.loc).slice(4), b.dataset.subret1));
   $$('#lcBody [data-submove]').forEach(sl=>sl.onchange=()=>{ if(sl.value) moveSub(sl.dataset.submove,sl.value); });
   $$('#lcBody [data-subret]').forEach(b=>b.onclick=()=>returnSubAll(b.dataset.subret));
@@ -1741,7 +1791,7 @@ function subHTML(s){ const items=s.items||{}; const u=unitsOf(items); const sold
   return '<div class="subcard"><div class="sh"><span class="sn">'+subIcon(s)+' '+esc(s.name)+'</span>'+(g?'<span class="gstat '+st+'">'+st+'</span>':'<span class="badge sub">'+esc(s.kind)+'</span>')+'<span class="pill">now <b>'+fmt(u)+'</b></span>'+(start?'<span class="pill">start <b>'+fmt(start)+'</b> · sold <b>'+fmt(sold)+'</b></span>':'')+'<div class="spacer"></div>'+
     (g?'<button class="btn sm'+(st==='live'?' primary':'')+'" data-gopen="'+s.id+'">'+(st==='live'?'💲 Sell':'🎲 Open game')+'</button>':'')+(g&&(st==='ready'||st==='ended')&&(LOC_BY_ID[s.at]||{}).kind==='stream'?'<button class="btn sm primary" data-gstart="'+s.id+'">▶ Start game</button>':'')+
     '<select class="sel" data-submove="'+s.id+'" style="min-width:150px"><option value="">Move whole '+(g?'game':s.kind==='display'?'display':'sub')+' to…</option>'+LOCS.filter(l=>l.id!==s.at&&l.id!=='warehouse'&&(l.kind!=='show'||s.kind==='show')).map(l=>'<option value="'+l.id+'">'+l.icon+' '+esc(l.name)+'</option>').join('')+'</select>'+
-    (s.kind==='display'?'<button class="btn sm primary" data-dispadd="'+s.id+'">＋ Add products</button>':'')+
+    (s.kind==='display'?'<button class="btn sm primary" data-dispadd="'+s.id+'">＋ Add products</button><button class="btn sm" data-dispbundle="'+s.id+'">🧩 Add bundle</button>':'')+
     ((s.at===gameHome(s)||s.kind==='display')?'<button class="btn sm warn" data-subret="'+s.id+'">↩ Return all to '+esc(locName(gameHome(s)))+'</button>':'')+'<button class="btn sm ghost" data-subhist="'+s.id+'">🕘</button></div>'+
     (s.kind==='display'?'<p class="mini" style="margin:8px 0 0">Samples set aside to show on stream. They are not part of the stock of '+esc(locName(s.at))+' until they are returned — ↩ on a line returns that product.</p>':'')+'<div class="list" data-sublist="'+s.id+'"></div></div>'; }
 function openSubHistory(id){ const s=SUBS[id]; const evs=LEDGER.filter(e=>e.from==='sub:'+id||e.to==='sub:'+id); const log=Object.values(s.log||{});
@@ -1797,14 +1847,16 @@ function buildOvFilters(keys){ [['ovType','type'],['ovBrand','brand'],['ovSeries
   $('#ovChips').innerHTML=['type','brand','series'].filter(f=>ovF[f]).map(f=>'<button class="chip on" data-fclear="'+f+'">'+OV_LABEL[f]+': '+esc(ovF[f])+' ✕</button>').join(''); $$('#ovChips [data-fclear]').forEach(b=>b.onclick=()=>{ ovF[b.dataset.fclear]=''; renderOverview(); }); }
 function renderOverview(){
   $('#ovDate').value=ovDay; const q=norm($('#ovQ').value); const showZero=$('#ovZero').checked; const ts=Math.min(dayEnd(ovDay)-1,Date.now());
-  const cols=LOCS.map(l=>({id:l.id,name:l.name,m:l.id==='warehouse'?itemsAt('warehouse'):balancesAtTime(l.id,ts)}));
+  const SHORT={warehouse:'WH',stockroom:'SR',gamearea:'SGA',tiktok1:'TT1',ebay:'EB',whatnot:'WN',singleslab:'S&S',cardshow:'CS'};
+  const cols=LOCS.map(l=>({id:l.id,name:l.name,short:SHORT[l.id]||l.name,m:l.id==='warehouse'?itemsAt('warehouse'):balancesAtTime(l.id,ts)}));
   const HA=heldIn(null); let keys=new Set(); cols.forEach(c=>Object.keys(c.m).forEach(k=>keys.add(k))); if(showZero) Object.keys(INV).forEach(k=>keys.add(fbKey(k)));
   const sortBy=$('#ovSort').value||'name'; const grp=k=>sortBy==='name'?'':(itemInfo(k)[sortBy]||'— no '+sortBy+' —');
-  keys=[...keys]; buildOvFilters(keys); keys=keys.filter(k=>ovMatch(k)).filter(k=>!q||norm(itemInfo(k).name).includes(q)||norm(itemInfo(k).brand).includes(q)||norm(itemInfo(k).series).includes(q)).sort((a,b)=>grp(a).localeCompare(grp(b))||itemInfo(a).name.localeCompare(itemInfo(b).name));
+  keys=[...keys]; buildOvFilters(keys); const qbc=new Set((BC[q]||[]).map(fbKey));   /* a scanned / typed barcode finds its product, like in the Guide Book */
+  keys=keys.filter(k=>ovMatch(k)).filter(k=>!q||qbc.has(k)||norm(itemInfo(k).name).includes(q)||norm(itemInfo(k).variation).includes(q)||norm(itemInfo(k).brand).includes(q)||norm(itemInfo(k).series).includes(q)||(q.length>=4&&barcodesOf(itemInfo(k).barcode).some(b=>b.includes(q)))).sort((a,b)=>grp(a).localeCompare(grp(b))||itemInfo(a).name.localeCompare(itemInfo(b).name));
   const rows=keys.map(k=>({k,g:grp(k),vals:cols.map(c=>+c.m[k]||0),hg:HA.g[k]||0,hd:HA.d[k]||0})).filter(r=>showZero||r.vals.some(v=>v)||r.hg||r.hd);
   let lastG=null; const ncol=cols.length+5;
-  $('#ovTbl').innerHTML='<thead><tr><th></th><th>Item</th>'+cols.map(c=>'<th class="num">'+esc(c.name)+'</th>').join('')+'<th class="num">Total</th><th class="num" title="Everything except the warehouse">LS</th><th class="num" title="Of the numbers on the left: units that are set aside in open games (🎲) and on displays (🪟) right now, in all rooms">Games + Displays</th></tr></thead><tbody>'+(rows.length?rows.slice(0,1500).map(r=>{ const it=itemInfo(r.k); let h=''; if(sortBy!=='name'&&r.g!==lastG){ lastG=r.g; h+='<tr><td colspan="'+ncol+'" style="background:var(--panel2);font-family:var(--disp);font-weight:700;color:var(--sub);padding:8px 11px">'+esc(r.g)+'</td></tr>'; }
-    return h+'<tr><td>'+img(it.image,'thumb zoomable')+'</td><td class="name">'+nm(it)+(varOf(it.variation)?' <span class="mini">· '+esc(it.variation)+'</span>':'')+(sortBy==='name'&&(it.type||it.brand||it.series)?'<div class="mini" style="font-size:11.5px">'+esc([it.type,it.brand,it.series].filter(Boolean).join(' · '))+'</div>':'')+'</td>'+r.vals.map((v,ci)=>{ const ed=isAdmin()&&cols[ci].id!=='warehouse'; return '<td class="num'+(ed?' editable':'')+'"'+(v<0?' style="color:var(--err)"':'')+(ed?' data-edit="'+esc(r.k)+'" data-loc="'+cols[ci].id+'" title="Click to correct"':'')+'>'+(v?fmt(v):(ed?'<span class="mini">·</span>':''))+'</td>'; }).join('')+'<td class="num"><b>'+fmt(r.vals.reduce((a,b)=>a+b,0))+'</b></td><td class="num">'+fmt(r.vals.slice(1).reduce((a,b)=>a+b,0))+'</td><td class="num" style="white-space:nowrap">'+(r.hg||r.hd?'<b>'+fmt(r.hg+r.hd)+'</b><div class="mini" style="font-size:11.5px">'+(r.hg?'🎲 '+fmt(r.hg):'')+(r.hg&&r.hd?' · ':'')+(r.hd?'🪟 '+fmt(r.hd):'')+'</div>':'')+'</td></tr>'; }).join(''):'<tr><td colspan="'+ncol+'" style="text-align:center;color:var(--muted);padding:24px">Nothing yet.</td></tr>')+'</tbody>';
+  $('#ovTbl').innerHTML='<thead><tr><th></th><th>Item</th>'+cols.map(c=>'<th class="num" title="'+esc(c.name)+'">'+esc(c.short)+'</th>').join('')+'<th class="num">Total</th><th class="num" title="Everything except the warehouse">LS</th><th class="num" title="Games + Displays — of the numbers on the left: units that are set aside in open games (🎲) and on displays (🪟) right now, in all rooms">G+D</th></tr></thead><tbody>'+(rows.length?rows.slice(0,1500).map(r=>{ const it=itemInfo(r.k); let h=''; if(sortBy!=='name'&&r.g!==lastG){ lastG=r.g; h+='<tr><td colspan="'+ncol+'" style="background:var(--panel2);font-family:var(--disp);font-weight:700;color:var(--sub);padding:8px 11px">'+esc(r.g)+'</td></tr>'; }
+    return h+'<tr><td>'+img(it.image,'thumb zoomable')+'</td><td class="name"><span class="cpy" data-copy="'+esc(it.name)+'" title="Click to copy the name">'+nm(it)+'</span>'+(varOf(it.variation)?' <span class="mini">· '+esc(it.variation)+'</span>':'')+(sortBy==='name'&&(it.type||it.brand||it.series)?'<div class="mini" style="font-size:11.5px">'+esc([it.type,it.brand,it.series].filter(Boolean).join(' · '))+'</div>':'')+'</td>'+r.vals.map((v,ci)=>{ const ed=isAdmin()&&cols[ci].id!=='warehouse'; return '<td class="num'+(ed?' editable':'')+'"'+(v<0?' style="color:var(--err)"':'')+(ed?' data-edit="'+esc(r.k)+'" data-loc="'+cols[ci].id+'" title="Click to correct"':'')+'>'+(v?fmt(v):(ed?'<span class="mini">·</span>':''))+'</td>'; }).join('')+'<td class="num"><b>'+fmt(r.vals.reduce((a,b)=>a+b,0))+'</b></td><td class="num">'+fmt(r.vals.slice(1).reduce((a,b)=>a+b,0))+'</td><td class="num" style="white-space:nowrap">'+(r.hg||r.hd?'<b>'+fmt(r.hg+r.hd)+'</b><div class="mini" style="font-size:11.5px">'+(r.hg?'🎲 '+fmt(r.hg):'')+(r.hg&&r.hd?' · ':'')+(r.hd?'🪟 '+fmt(r.hd):'')+'</div>':'')+'</td></tr>'; }).join(''):'<tr><td colspan="'+ncol+'" style="text-align:center;color:var(--muted);padding:24px">Nothing yet.</td></tr>')+'</tbody>';
   $$('#ovTbl [data-edit]').forEach(td=>td.onclick=()=>openAdjust(INV_FB[td.dataset.edit]||td.dataset.edit,td.dataset.loc,ovDay));
   $('#ovTbl')._rows=rows; $('#ovTbl')._cols=cols;
 }
@@ -1904,7 +1956,7 @@ $('#homeBtn').onclick=goMenu; $('#lcBack').onclick=goMenu; $('#ovBack').onclick=
 
 $('#mOverview').onclick=()=>{ show('overview'); renderOverview(); }; $('#mDisc').onclick=()=>{ if(!isAdmin()) return; show('disc'); renderDisc(); }; $('#mHistory').onclick=()=>{ if(!isAdmin()) return; show('history'); renderHistory(); };
 $('#mImport').onclick=()=>{ if(!isAdmin()) return; show('import'); $('#imDay').value=$('#imDay').value||dayOf(Date.now()); renderImport(); }; $('#imBack').onclick=goMenu; buildImportFields(); $('#imDay').addEventListener('change',renderImport); $('#imCsv').onclick=exportStockCsv;
-$('#mGame').onclick=openPlanGame; $('#lcGame').onclick=openPlanGame; $('#mBundles').onclick=()=>openBundles('menu'); $('#bdBack').onclick=()=>{ if(bdBackTo==='game'&&SUBS[curGame]){ show('game'); renderGame(); } else goMenu(); }; $('#bdNew').onclick=()=>editBundleDef(null); $('#bdQ').addEventListener('input',e=>{ bdQ=e.target.value; renderBundles(); }); $('#mBoxes').onclick=openBoxSettings;
+$('#mGame').onclick=openPlanGame; $('#lcGame').onclick=openPlanGame; $('#mBundles').onclick=()=>openBundles('menu'); $('#lcBundles').onclick=()=>openBundles('loc'); $('#mNaming').onclick=openNamingGuide; $('#bdGuide').onclick=openNamingGuide; $('#bdBack').onclick=()=>{ if(bdBackTo==='game'&&SUBS[curGame]){ show('game'); renderGame(); } else if(bdBackTo==='loc'&&curLoc){ show('loc'); renderLoc(); } else goMenu(); }; $('#bdNew').onclick=()=>editBundleDef(null); $('#bdQ').addEventListener('input',e=>{ bdQ=e.target.value; renderBundles(); }); $('#mBoxes').onclick=openBoxSettings;
 $('#gmBack').onclick=()=>{ if(gmBackTo==='loc'&&curLoc){ show('loc'); lcTab='subs'; renderLoc(); } else goMenu(); };
 $('#mReload').onclick=()=>{ if(isAdmin()) loadInventory(true); };
 $$('#lcTabs button').forEach(b=>b.onclick=()=>{ lcTab=b.dataset.t; renderLoc(); });
@@ -1920,7 +1972,7 @@ $('#hsCsv').onclick=()=>{ const l=$('#hsBody')._rows||[]; csv([['Time','Kind','I
 /* ---- sign-in through CALIPOKE ADMIN ---- */
 (function boot(){ applyLogo(); $('#buildTag').textContent='v'+BUILD;
   CPAuth.init({app:'inventory',header:'#hdrUser',onReady:u=>{ MY_NAME=u.name; MY_ROLE=u.role==='admin'?'admin':'staff';
-    $('#meName').textContent=u.name+' · '+u.roleLabel; ['mBoxes','mImport','mDisc','mHistory','mReload'].forEach(id=>$('#'+id).classList.toggle('hide',u.role!=='admin')); $('#mGame').classList.toggle('hide',u.role==='streamer'); $('#mBundles').classList.toggle('hide',u.role==='streamer');
+    $('#meName').textContent=u.name+' · '+u.roleLabel; ['mBoxes','mImport','mDisc','mHistory','mReload'].forEach(id=>$('#'+id).classList.toggle('hide',u.role!=='admin')); $('#mGame').classList.toggle('hide',u.role==='streamer'); $('#mBundles').classList.toggle('hide',u.role==='streamer'); $('#mNaming').classList.toggle('hide',u.role==='streamer');
     $('#appHeader').classList.remove('hide'); $('#appMain').classList.remove('hide'); goMenu(); connect(); setTimeout(applyHash,400); }}); })();
 </script>
 </body>
