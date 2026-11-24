@@ -184,7 +184,7 @@ td.editable{cursor:pointer} td.editable:hover{background:#1a2338;box-shadow:inse
       <div class="pill">Items <b id="lcItems">0</b> · units <b id="lcUnits">0</b></div>
       <button class="btn sm" id="lcReq">🚚 Request</button><button class="btn sm" id="lcCount">🔢 Count</button><button class="btn sm ghost" id="lcCountHist" title="Finished counts of this location: open one, download it as CSV">🗂 Past counts</button><button class="btn sm" id="lcNewSub">＋ Sub-location</button><button class="btn sm" id="lcDisplay" title="A display: sample products set aside to show on stream — kept apart from the stock of the room">🪟 New display</button><button class="btn sm primary" id="lcGame">🎲 Plan a game</button></div>
     <div class="chipbar" id="lcDrop"></div>
-    <div class="seg" id="lcTabs" style="margin-bottom:12px"><button data-t="shift" class="hide">⏱ Shift</button><button data-t="stock" class="on">📦 Inventory</button><button data-t="subs">🧺 Sub-locations</button><button data-t="sales" class="hide">💲 Sales</button><button data-t="days">🗓 Days</button><button data-t="log">🕘 Movements</button></div>
+    <div class="seg" id="lcTabs" style="margin-bottom:12px"><button data-t="shift" class="hide">⏱ Shift</button><button data-t="stock" class="on">📦 Inventory</button><button data-t="subs">🧺 Sub-locations</button><button data-t="disp">🪟 Displays</button><button data-t="sales" class="hide">💲 Sales</button><button data-t="days">🗓 Days</button><button data-t="log">🕘 Movements</button></div>
     <div id="lcBody"></div>
   </section>
 
@@ -257,7 +257,7 @@ td.editable{cursor:pointer} td.editable:hover{background:#1a2338;box-shadow:inse
      packstation/transfers           → ready transfers become ledger events
    Day boundaries: calendar days (local time). Streamer rooms: day = day shift + night shift (build 3).
    ============================================================ */
-const BUILD='2026-11-24b · Bundles: catalog with names, barcodes and labels';
+const BUILD='2026-11-24c · Games and Displays on separate tabs';
 const INV_CONFIG={apiKey:"AIzaSyAsTYwU0qABmXKuYSpyendwHw3djJc-Bqo",authDomain:"calipoke-inventory.firebaseapp.com",databaseURL:"https://calipoke-inventory-default-rtdb.firebaseio.com",projectId:"calipoke-inventory",storageBucket:"calipoke-inventory.firebasestorage.app",messagingSenderId:"156640764541",appId:"1:156640764541:web:833f96e4b0849b53454714"};
 const STATION_CONFIG={apiKey:"AIzaSyB2I2sR9czF6F29OZMyEZubmwQGP7nWFlc",authDomain:"calipoke-packstation.firebaseapp.com",databaseURL:"https://calipoke-packstation-default-rtdb.firebaseio.com",projectId:"calipoke-packstation",storageBucket:"calipoke-packstation.firebasestorage.app",messagingSenderId:"125288117157",appId:"1:125288117157:web:461b4d553e100c07b9ae4c"};
 const ROOT='inv', STATION_PATH='packstation';
@@ -582,7 +582,7 @@ function openNewDisplay(loc){
     '<div class="row" style="margin-top:16px"><button class="btn primary lg" id="ndGo" style="flex:1">Create &amp; add products</button><button class="btn ghost" id="ndX">Cancel</button></div>');
   d.querySelector('#ndX').onclick=closeModal; const inp=d.querySelector('#ndName'); setTimeout(()=>inp.focus(),50);
   const go=async()=>{ const n=inp.value.trim(); if(n.length<2){ toast('Enter a name','warn'); return; } const ref=R.child('subs').push(); const rec={name:n,kind:'display',at:loc,home:'stockroom',status:'open',createdAt:Date.now(),createdBy:MY_NAME,items:{}};
-    await ref.set(rec); SUBS[ref.key]=SUBS[ref.key]||rec; alog('display_new',{text:n,loc,ref:ref.key}); closeModal(); toast('Display "'+n+'" created','ok'); lcTab='subs'; expandedSub=ref.key; renderLoc(); openDisplayAdd(ref.key); };
+    await ref.set(rec); SUBS[ref.key]=SUBS[ref.key]||rec; alog('display_new',{text:n,loc,ref:ref.key}); closeModal(); toast('Display "'+n+'" created','ok'); lcTab='disp'; expandedSub=ref.key; renderLoc(); openDisplayAdd(ref.key); };
   d.querySelector('#ndGo').onclick=go; inp.addEventListener('keydown',e=>{ if(e.key==='Enter') go(); });
 }
 /* add products to a display: from the room it stands in, or straight from the Stockroom */
@@ -1654,25 +1654,26 @@ function renderLoc(){
   const strm=isStreamer(); ['days','log'].forEach(t=>$('#lcTabs [data-t="'+t+'"]').classList.toggle('hide',strm)); if(strm&&(lcTab==='days'||lcTab==='log')) lcTab='stock';
   $('#lcTabs [data-t="shift"]').classList.add('hide'); if(lcTab==='shift') lcTab='stock';   /* shifts are retired: streamers no longer scan sales in the app */
   $('#lcTabs [data-t="sales"]').classList.toggle('hide',l.kind!=='stream'); if(lcTab==='sales'&&l.kind!=='stream') lcTab='stock';
-  $('#lcTabs [data-t="subs"]').textContent=l.id===SLAB_LOC?'🪪 Slabs':(l.kind==='stream'||PLAN_LOCS.includes(l.id))?'🎲 Games · 🪟 Displays':l.kind==='show'?'🚐 Shows':'🧺 Sub-locations';
+  $('#lcTabs [data-t="subs"]').textContent=l.id===SLAB_LOC?'🪪 Slabs':(l.kind==='stream'||PLAN_LOCS.includes(l.id))?'🎲 Games':l.kind==='show'?'🚐 Shows':'🧺 Sub-locations';
   $('#lcDisplay').classList.toggle('hide',curLoc==='warehouse'||l.id===SLAB_LOC||isStreamer());
+  { const noDisp=curLoc==='warehouse'||l.id===SLAB_LOC; $('#lcTabs [data-t="disp"]').classList.toggle('hide',noDisp); if(lcTab==='disp'&&noDisp) lcTab='stock'; const nd=subsAt(curLoc).filter(x=>x.kind==='display').length; $('#lcTabs [data-t="disp"]').textContent='🪟 Displays'+(nd?' · '+nd:''); }
   if(l.id===SLAB_LOC){ $('#lcNewSub').classList.add('hide'); $('#lcGame').classList.add('hide'); }
   $$('#lcTabs button').forEach(b=>b.classList.toggle('on',b.dataset.t===lcTab));
   /* drop targets: other locations + sub-locations here */
   $('#lcDrop').innerHTML=''; $('#lcDrop').classList.add('hide');
   const body=$('#lcBody');
-  if(lcTab==='sales') renderSales(body); else if(lcTab==='stock') renderStock(body); else if(lcTab==='subs'){ if(curLoc===SLAB_LOC) renderSlabs(body); else renderSubs(body); } else if(lcTab==='days') renderDays(body); else renderLocLog(body);
+  if(lcTab==='sales') renderSales(body); else if(lcTab==='stock') renderStock(body); else if(lcTab==='subs'){ if(curLoc===SLAB_LOC) renderSlabs(body); else renderSubs(body); } else if(lcTab==='disp') renderSubs(body); else if(lcTab==='days') renderDays(body); else renderLocLog(body);
 }
 /* the rooms a product or a whole game can be dragged onto — shown in the places where games are built */
 function dropSideHTML(what){ if(!PLAN_LOCS.includes(curLoc)||isStreamer()) return '';
   const rooms=LOCS.filter(x=>x.id!==curLoc&&x.id!=='warehouse'&&(what==='product'||x.kind!=='show'));
   const here=what==='product'?subsAt(curLoc):[];
-  return '<aside class="dropside"><div class="mini" style="margin-bottom:8px">'+(what==='game'?'Drag a game onto a room to move it there whole:':'Drag a product onto:')+'</div>'+rooms.map(x=>{ const gl=what==='game'?subsAt(x.id).filter(z=>z.kind==='game'||z.kind==='display'):[]; return '<span class="chip" data-drop="'+x.id+'">'+x.icon+' '+esc(x.name)+(gl.length?' <span class="mini">· '+gl.length+'</span>':'')+'</span>'+
+  return '<aside class="dropside"><div class="mini" style="margin-bottom:8px">'+(what==='game'?'Drag a game onto a room to move it there whole:':'Drag a product onto:')+'</div>'+rooms.map(x=>{ const gl=what==='game'?subsAt(x.id).filter(z=>z.kind==='game'):[]; return '<span class="chip" data-drop="'+x.id+'">'+x.icon+' '+esc(x.name)+(gl.length?' <span class="mini">· '+gl.length+'</span>':'')+'</span>'+
         gl.map(z=>'<span class="chip sub" data-gosub="'+z.id+'" style="margin-left:14px;cursor:pointer" title="Open '+esc(z.name)+'">'+subIcon(z)+' '+esc(z.name)+' <span class="mini">›</span></span>').join(''); }).join('')+
     (here.length?'<div class="mini" style="margin:10px 0 6px">Games &amp; displays here — click to open:</div>'+here.map(s=>'<span class="chip sub" data-drop="sub:'+s.id+'" data-gosub="'+s.id+'" style="cursor:pointer" title="Open '+esc(s.name)+' · or drag a product onto it">'+subIcon(s)+' '+esc(s.name)+' <span class="mini">›</span></span>').join(''):'')+'</aside>'; }
 const subIcon=s=>s.kind==='game'?'🎲':s.kind==='display'?'🪟':s.kind==='show'?'🚐':'🧺';
 /* a click on a game / display in the left list: a game opens its own screen, anything else opens in the tab of its room */
-function goSub(id){ const s=SUBS[id]; if(!s) return; if(s.kind==='game'){ openGame(id,'loc'); return; } if(s.at!==curLoc){ if(!canLoc(s.at)){ toast('Your role has no access to '+locName(s.at),'warn'); return; } curLoc=s.at; } lcTab='subs'; expandedSub=id; show('loc'); renderLoc(); const el=$('#lcBody .subcard'); if(el) el.scrollIntoView({behavior:'smooth',block:'nearest'}); }
+function goSub(id){ const s=SUBS[id]; if(!s) return; if(s.kind==='game'){ openGame(id,'loc'); return; } if(s.at!==curLoc){ if(!canLoc(s.at)){ toast('Your role has no access to '+locName(s.at),'warn'); return; } curLoc=s.at; } lcTab=s.kind==='display'?'disp':'subs'; expandedSub=id; show('loc'); renderLoc(); const el=$('#lcBody .subcard'); if(el) el.scrollIntoView({behavior:'smooth',block:'nearest'}); }
 document.addEventListener('click',e=>{ const c=e.target.closest&&e.target.closest('[data-gosub]'); if(c && !(typeof dnd!=='undefined'&&dnd&&dnd.moved)) goSub(c.dataset.gosub); });
 function renderStock(body){
   const m=itemsAt(curLoc), res=reservedAt(curLoc); const q=norm(lcQ);
@@ -1697,9 +1698,10 @@ function rowHTML(k,qty,reserved,loc){ const it=itemInfo(k); const at=loc||curLoc
     '<div class="q'+(qty<0?' neg':(reserved?' res':''))+'">'+fmt(qty)+'<small>units</small></div><div class="acts">'+(ro?'':'<span class="grip" title="Drag to another location">⠿</span>'+(canOpen?(qty>0?'<button class="btn sm warn" data-open="'+esc(k)+'" title="Open box → packs">📦 Open</button>':'<button class="btn sm ghost" disabled title="Nothing to open: the stock here is '+fmt(qty)+'. Enter the real quantity first (Count or ✎).">📦 Open</button>'):'')+(isSub(at)&&qty>0?'<button class="btn sm warn" data-subret1="'+esc(k)+'" title="Return this product to '+esc(locName(gameHome(subOf(at))))+'">↩</button>':'')+'<button class="btn sm" data-tr="'+esc(k)+'">⇄</button>'+(isAdmin()?'<button class="btn sm ghost" data-adj="'+esc(k)+'" title="Correct">✎</button>':''))+'</div></div>'; }
 function wireRows(sel,loc){ $$(sel+' [data-open]').forEach(b=>b.onclick=()=>openBoxAt(loc,b.dataset.open)); $$(sel+' [data-tr]').forEach(b=>b.onclick=()=>openTransfer(b.dataset.tr,loc)); $$(sel+' [data-adj]').forEach(b=>b.onclick=()=>openAdjust(b.dataset.adj,loc)); }
 function renderSubs(body){ if(isStreamer()){ renderStreamerGames(body); return; }
-  const subs=subsAt(curLoc); const closed=Object.keys(SUBS).filter(id=>SUBS[id].status==='closed'&&(SUBS[id].returnedTo===curLoc||SUBS[id].at===curLoc)).map(id=>Object.assign({id},SUBS[id])).sort((a,b)=>(b.closedAt||0)-(a.closedAt||0)).slice(0,20);
-  const open=subs.find(s=>s.id===expandedSub); const side=dropSideHTML('game'), gm=PLAN_LOCS.includes(curLoc);
-  body.innerHTML=(side?'<div class="withside">'+side+'<div class="mainside">':'')+(subs.length?'<p class="mini" style="margin:0 0 8px">Tap a tile to see what is inside. '+(side?'Drag a tile onto a room on the left to move the whole game there.':'Use “Move whole sub to…” inside the tile to move it.')+'</p><div class="stiles">'+subs.map(s=>stileHTML(s)).join('')+'</div>':'<div class="empty">'+(gm?'No games here yet. Press <b>🎲 Plan a game</b> to build one — it appears here and can be dragged onto a room.':'No sub-locations here. Create one for a game or a show, then move products into it.')+'</div>')+(open?subHTML(open):'')+
+  const dOnly=lcTab==='disp'; const mine=x=>dOnly?x.kind==='display':x.kind!=='display';   /* Displays have their own tab */
+  const subs=subsAt(curLoc).filter(mine); const closed=Object.keys(SUBS).filter(id=>SUBS[id].status==='closed'&&mine(SUBS[id])&&(SUBS[id].returnedTo===curLoc||SUBS[id].at===curLoc)).map(id=>Object.assign({id},SUBS[id])).sort((a,b)=>(b.closedAt||0)-(a.closedAt||0)).slice(0,20);
+  const open=subs.find(s=>s.id===expandedSub); const side=dOnly?'':dropSideHTML('game'), gm=PLAN_LOCS.includes(curLoc);
+  body.innerHTML=(side?'<div class="withside">'+side+'<div class="mainside">':'')+(subs.length?'<p class="mini" style="margin:0 0 8px">Tap a tile to see what is inside. '+(dOnly?'':side?'Drag a tile onto a room on the left to move the whole game there.':'Use “Move whole sub to…” inside the tile to move it.')+'</p><div class="stiles">'+subs.map(s=>stileHTML(s)).join('')+'</div>':'<div class="empty">'+(dOnly?'No displays in '+esc(locName(curLoc))+' yet. Press <b>🪟 New display</b> to set sample products aside for the stream.':gm?'No games here yet. Press <b>🎲 Plan a game</b> to build one — it appears here and can be dragged onto a room.':'No sub-locations here. Create one for a game or a show, then move products into it.')+'</div>')+(open?subHTML(open):'')+
     (closed.length?'<h2 style="margin-top:22px">Closed</h2>'+closed.map(s=>'<div class="subcard" style="opacity:.7"><div class="sh"><span class="sn">'+esc(s.name)+'</span><span class="badge muted">closed '+esc(fmtTime(s.closedAt))+'</span><div class="spacer"></div><button class="btn sm ghost" data-subhist="'+s.id+'">🕘 History</button></div></div>').join(''):'')+(side?'</div></div>':'');
   $$('#lcBody [data-stile]').forEach(t=>t.onclick=e=>{ if(e.target.closest('button,select')) return; expandedSub=expandedSub===t.dataset.stile?null:t.dataset.stile; renderSubs(body); const el=$('#lcBody .subcard'); if(el) el.scrollIntoView({behavior:'smooth',block:'nearest'}); });
   subs.forEach(s=>{ const items=s.items||{}; const keys=Object.keys(items).filter(k=>items[k]).sort((a,b)=>itemInfo(a).name.localeCompare(itemInfo(b).name)); const host=body.querySelector('[data-sublist="'+s.id+'"]'); if(host) host.innerHTML=keys.length?keys.map(k=>rowHTML(k,items[k],0,'sub:'+s.id)).join(''):'<div class="empty" style="padding:16px">'+(s.kind==='display'?'Empty — press <b>＋ Add products</b>.':'Empty — drag products here from the Stock tab.')+'</div>'; wireRows('[data-sublist="'+s.id+'"]','sub:'+s.id); });
@@ -1722,7 +1724,8 @@ function renderStreamerGames(body){ const loc=curLoc; const shOpen=shiftOpenIn(l
   const disp=subsAt(loc).filter(x=>x.kind==='display');
   const dcard=x=>{ const items=x.items||{}; const on=expandedSub===x.id; const keys=Object.keys(items).filter(k=>+items[k]).sort((a,b)=>itemInfo(a).name.localeCompare(itemInfo(b).name));
     return '<div class="subcard"><div class="sh" data-gexp="'+x.id+'" style="cursor:pointer"><span class="sn">🪟 '+esc(x.name)+'</span><span class="badge sub">display</span><span class="pill">'+keys.length+' products · <b>'+fmt(unitsOf(items))+'</b> units</span><div class="spacer"></div><span class="mini">'+(on?'▾':'▸')+'</span></div>'+(on?'<div class="list" style="margin-top:8px">'+(keys.length?keys.map(k=>rowHTML(k,items[k],0,'sub:'+x.id)).join(''):'<div class="empty" style="padding:14px">Empty.</div>')+'</div>':'')+'</div>'; };
-  body.innerHTML=(disp.length?'<h2 style="margin:0 0 8px">Displays</h2>'+disp.map(dcard).join('')+'<h2 style="margin:18px 0 8px">Games</h2>':'')+(cur.length?cur.map(g=>card(g,false)).join(''):'<div class="empty">No current or planned games in '+esc(locName(loc))+'. Games are planned in the Stockroom and moved here whole.</div>')+
+  if(lcTab==='disp'){ body.innerHTML=disp.length?disp.map(dcard).join(''):'<div class="empty">No displays in '+esc(locName(loc))+'.</div>'; body.querySelectorAll('[data-gexp]').forEach(h=>h.onclick=()=>{ expandedSub=expandedSub===h.dataset.gexp?null:h.dataset.gexp; renderStreamerGames(body); }); return; }
+  body.innerHTML=(cur.length?cur.map(g=>card(g,false)).join(''):'<div class="empty">No current or planned games in '+esc(locName(loc))+'. Games are planned in the Stockroom and moved here whole.</div>')+
     '<div style="margin-top:20px;text-align:center"><button class="btn ghost" id="sgPast">'+(showPastGames?'▴ Hide past games':'🕘 Show past games ('+past.length+')')+'</button></div>'+
     (showPastGames?(past.length?'<h2 style="margin-top:14px">Past games</h2>'+past.map(g=>card(g,true)).join(''):'<p class="mini" style="text-align:center">No past games here.</p>'):'');
   body.querySelectorAll('[data-gexp]').forEach(h=>h.onclick=e=>{ if(e.target.closest('button')) return; expandedSub=expandedSub===h.dataset.gexp?null:h.dataset.gexp; renderStreamerGames(body); });
@@ -1891,7 +1894,7 @@ $('#camClose').onclick=closeCam;
 function renderCurrent(){ if(!MY_NAME) return; if((screen==='disc'||screen==='history'||screen==='import')&&!isAdmin()){ goMenu(); return; } if(screen==='menu') renderMenu(); else if(screen==='loc') renderLoc(); else if(screen==='overview') renderOverview(); else if(screen==='disc') renderDisc(); else if(screen==='history') renderHistory(); else if(screen==='game') renderGame(); else if(screen==='bundles') renderBundles(); else if(screen==='import') renderImport(); }
 function goMenu(){ show('menu'); renderMenu(); }
 /* links from other apps: #loc/<id>/<tab> · #game/<subId> */
-function applyHash(){ if(!MY_NAME) return; const m=/^#loc\/([a-z0-9]+)(?:\/(stock|subs|sales|days|log))?$/.exec(location.hash||''); if(m&&LOC_BY_ID[m[1]]){ openLoc(m[1]); if(m[2]){ lcTab=m[2]; renderLoc(); } return; } const g=/^#game\/(.+)$/.exec(location.hash||''); if(g&&SUBS[decodeURIComponent(g[1])]) openGame(decodeURIComponent(g[1]),'menu'); }
+function applyHash(){ if(!MY_NAME) return; const m=/^#loc\/([a-z0-9]+)(?:\/(stock|subs|disp|sales|days|log))?$/.exec(location.hash||''); if(m&&LOC_BY_ID[m[1]]){ openLoc(m[1]); if(m[2]){ lcTab=m[2]; renderLoc(); } return; } const g=/^#game\/(.+)$/.exec(location.hash||''); if(g&&SUBS[decodeURIComponent(g[1])]) openGame(decodeURIComponent(g[1]),'menu'); }
 window.addEventListener('hashchange',applyHash);
 $('#homeBtn').onclick=goMenu; $('#lcBack').onclick=goMenu; $('#ovBack').onclick=goMenu; $('#dcBack').onclick=goMenu; $('#hsBack').onclick=goMenu;
 
