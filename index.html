@@ -245,7 +245,7 @@ td.editable{cursor:pointer} td.editable:hover{background:#1a2338;box-shadow:inse
 /* ============================================================
    CPH INVENTORY — stock by location, built on a movement ledger
    ------------------------------------------------------------
-   Own project: calipoke-inventory  (root node  inv/)
+   Data: calipoke-packstation database, node packstation/inv/ (moved from calipoke-inventory on 2026-11-25)
      catalog/{ikey}             product (mirrored from the inventory sheet)
      balances/{loc}/{ikey}      qty — main stock of a location
      subs/{subId}               sub-location (game / show): {name, kind, at, status, items{ikey:qty}, start{}, sold{}}
@@ -263,10 +263,11 @@ td.editable{cursor:pointer} td.editable:hover{background:#1a2338;box-shadow:inse
      packstation/transfers           → ready transfers become ledger events
    Day boundaries: calendar days (local time). Streamer rooms: day = day shift + night shift (build 3).
    ============================================================ */
-const BUILD='2026-11-24i · bundles: return or break up · returns can take units out of bundles';
-const INV_CONFIG={apiKey:"AIzaSyAsTYwU0qABmXKuYSpyendwHw3djJc-Bqo",authDomain:"calipoke-inventory.firebaseapp.com",databaseURL:"https://calipoke-inventory-default-rtdb.firebaseio.com",projectId:"calipoke-inventory",storageBucket:"calipoke-inventory.firebasestorage.app",messagingSenderId:"156640764541",appId:"1:156640764541:web:833f96e4b0849b53454714"};
+const BUILD='2026-11-25a · security: data in the station database, sign-in for every read';
+/* the data moved from the calipoke-inventory project into the station database (packstation/inv) on 2026-11-25:
+   one sign-in, one set of rules. The old project is kept locked as a frozen backup. */
 const STATION_CONFIG={apiKey:"AIzaSyB2I2sR9czF6F29OZMyEZubmwQGP7nWFlc",authDomain:"calipoke-packstation.firebaseapp.com",databaseURL:"https://calipoke-packstation-default-rtdb.firebaseio.com",projectId:"calipoke-packstation",storageBucket:"calipoke-packstation.firebasestorage.app",messagingSenderId:"125288117157",appId:"1:125288117157:web:461b4d553e100c07b9ae4c"};
-const ROOT='inv', STATION_PATH='packstation';
+const ROOT='packstation/inv', STATION_PATH='packstation';
 const INVENTORY_SHEET_URL='https://docs.google.com/spreadsheets/d/13vYpuca93GKyRDcQJA3R6DFoP-MrAm_idEnBNgpKpTw/edit?usp=sharing';
 const WAREHOUSE_PLAN_URL='https://r-alib.github.io/calipoke-station/warehouse-plan.html';   // TODO: real address of warehouse-plan.html
 const TRANSFER_APP_URL='https://r-alib.github.io/calipoke-transfer/';
@@ -388,8 +389,7 @@ function searchProducts(q,limit){ const nq=norm(q), nc=clean(q); if(!nq) return 
    ============================================================ */
 function setDb(on,txt){ DB_ON=on; $('#dbPill').classList.toggle('on',on); $('#dbTxt').textContent=txt; }
 function connect(){
-  const app=(firebase.apps||[]).find(a=>a.options.projectId===INV_CONFIG.projectId)||firebase.initializeApp(INV_CONFIG); db=firebase.database(app); R=db.ref(ROOT);
-  const sapp=(firebase.apps||[]).find(a=>a.options.projectId===STATION_CONFIG.projectId)||firebase.initializeApp(STATION_CONFIG,'station'); SDB=firebase.database(sapp);
+  db=CPAuth.db; R=db.ref(ROOT); SDB=db;      // the signed-in app (calipoke-packstation)
   db.ref('.info/connected').on('value',s=>setDb(!!s.val(),s.val()?'live':'reconnecting…'));
   R.child('presence/'+Math.random().toString(36).slice(2,8)).set({name:MY_NAME,at:Date.now()}).catch(()=>{});
   R.child('balances').on('value',s=>{ BAL=s.val()||{}; renderCurrent(); });
@@ -1720,7 +1720,7 @@ function openTransferRequest(loc){ const cart=[]; let to=TR_NAME[loc]||'Stockroo
       const t={id,type:'transfer',gameName:null,showName:null,requester:MY_NAME,createdAt:now,updatedAt:now,status:'pending',note,to,items:cart.map(c=>({ikey:c.ikey,name:c.name,variation:c.variation||'',barcode:c.barcode||'',image:c.image||'',qty:+c.qty||1,qtyApproved:null,qtyPrepared:null,from:''})),log:[{at:now,by:MY_NAME,text:'Request sent for review (from CPH INVENTORY · '+locName(loc)+')'}],submittedAt:now,source:'cph-inventory',sourceLoc:loc};
       try{ await SDB.ref(STATION_PATH+'/transfers/'+id).set(t); }catch(e){ toast('Could not save: '+(e.message||e),'err',4000); d.querySelector('#trSend').disabled=false; return; }
       closeModal(); beep('ok'); toast('Request '+id+' sent → '+to,'ok',4000); alog('transfer_request',{text:id+' → '+to+' · '+cart.length+' line(s)',loc:loc,ref:id});
-      try{ const r=await fetch(SLACK_PROXY_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({event:'new',by:MY_NAME,extra:'',link:TRANSFER_APP_URL+'#req/'+encodeURIComponent(id),request:t})}); const j=await r.json(); if(j&&j.ts) SDB.ref(STATION_PATH+'/transfers/'+id+'/slackTs').set(j.ts); }catch(e){ toast('Slack notification could not be sent','warn',3500); } };
+      try{ const r=await fetch(SLACK_PROXY_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({idToken:await CPAuth.idToken().catch(()=>''),event:'new',by:MY_NAME,extra:'',link:TRANSFER_APP_URL+'#req/'+encodeURIComponent(id),request:t})}); const j=await r.json(); if(j&&j.ts) SDB.ref(STATION_PATH+'/transfers/'+id+'/slackTs').set(j.ts); }catch(e){ toast('Slack notification could not be sent','warn',3500); } };
     setTimeout(()=>sc.focus(),60); };
   draw(); }
 function gamesAt(loc){ return Object.keys(SUBS).filter(id=>SUBS[id].kind==='game'&&SUBS[id].at===loc&&SUBS[id].status!=='closed').map(id=>Object.assign({id},SUBS[id])).sort((a,b)=>(gameStatus(a)==='live'?0:1)-(gameStatus(b)==='live'?0:1)||(b.createdAt||0)-(a.createdAt||0)); }
