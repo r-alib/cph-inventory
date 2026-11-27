@@ -263,7 +263,7 @@ td.editable{cursor:pointer} td.editable:hover{background:#1a2338;box-shadow:inse
      packstation/transfers           → ready transfers become ledger events
    Day boundaries: calendar days (local time). Streamer rooms: day = day shift + night shift (build 3).
    ============================================================ */
-const BUILD='2026-11-25a · security: data in the station database, sign-in for every read';
+const BUILD='2026-11-27a · the date of a count can be changed while it is open';
 /* the data moved from the calipoke-inventory project into the station database (packstation/inv) on 2026-11-25:
    one sign-in, one set of rules. The old project is kept locked as a frozen backup. */
 const STATION_CONFIG={apiKey:"AIzaSyB2I2sR9czF6F29OZMyEZubmwQGP7nWFlc",authDomain:"calipoke-packstation.firebaseapp.com",databaseURL:"https://calipoke-packstation-default-rtdb.firebaseio.com",projectId:"calipoke-packstation",storageBucket:"calipoke-packstation.firebasestorage.app",messagingSenderId:"125288117157",appId:"1:125288117157:web:461b4d553e100c07b9ae4c"};
@@ -717,7 +717,7 @@ const countKey=(loc,opts)=>fbKey(loc)+((opts&&opts.shift)?'~'+fbKey(opts.shift):
 function openCount(loc,opts){ opts=opts||{};
   const sk=countKey(loc,opts), sess=CSESS[sk];
   if(!sess){ countStartScreen(loc,opts); return; }
-  const day=sess.day||dayOf(Date.now()); const lines={};
+  let day=sess.day||dayOf(Date.now()); const lines={};
   const L0=sess.lines||{}; Object.keys(L0).forEach(fk=>{ const v=L0[fk]; if(!v) return; lines[v.item||fk]={exp:+v.exp||0,cnt:(v.cnt==null?null:+v.cnt),how:v.how||'',tmp:!!v.tmp,tmpName:v.tmpName||''}; });
   const save=()=>{ const o={}; Object.keys(lines).forEach(k=>{ const l=lines[k]; o[fbKey(k)]={item:k,exp:l.exp,cnt:l.cnt==null?null:l.cnt,how:l.how||null,tmp:l.tmp||null,tmpName:l.tmpName||null}; });
     (CSESS[sk]=CSESS[sk]||sess).lines=o; return R.child('countSessions/'+sk+'/lines').set(o).catch(e=>toast('Not saved: '+((e&&e.message)||e),'err',4000)); };
@@ -735,6 +735,7 @@ function openCount(loc,opts){ opts=opts||{};
     const footHTML=()=>left?left+' line(s) not counted yet.':'Every line is counted'+(diffs?' · '+diffs+' differ':' — all match')+'.';
     const vis=keys.filter(k=>flt==='all'||(flt==='todo'&&!isC(k))||(flt==='done'&&isC(k))||(flt==='diff'&&isD(k)));
     const d=modal('<h2>'+(opts.title||'🔢 Count · '+locName(loc))+(day>=dayOf(Date.now())?'':' <span class="badge warn">as of '+esc(day)+'</span>')+'</h2>'+
+      (isAdmin()&&!opts.shift&&!isSub(loc)?'<div class="row" style="margin:2px 0 8px;align-items:center"><span class="mini">Count as of (end of that day)</span><input id="ctDayIn" class="tinput" type="date" value="'+esc(day)+'" max="'+dayOf(Date.now())+'" style="font-family:var(--body);color-scheme:dark;padding:6px 8px;width:auto" title="Change the date of this count. Expected is recalculated for that day; the numbers you counted stay."><span class="mini">'+(day>=dayOf(Date.now())?'today — compared with the stock when the count started':'movements after '+esc(day)+' are applied on top of the count')+'</span></div>':'')+
       '<p class="sub" style="font-size:13px"><span class="badge info">started '+esc(hhmm(sess.startedAt))+(sess.by?' · '+esc(sess.by):'')+'</span> '+(opts.intro||'The list is what the system expected when the count started. If the quantity is right, press <b>✓ Match</b>. Otherwise scan the product, find it by name, or type the number into <b>Counted</b>. Not here physically: <b>∅ Not here</b>. A line you did not touch stays <b>not counted</b>. Everything is saved as you go — you can close this window and continue later.')+'</p>'+
       '<div class="scanwrap" style="margin-top:10px"><div class="scanrow" style="position:relative"><input id="ctScan" autocomplete="off" placeholder="Scan or type a product…"><button class="btn" id="ctCam">📷</button><div class="sugg hide" id="ctSugg"></div></div></div>'+
       '<div class="kvs" id="ctKv">'+kvHTML()+'</div>'+
@@ -758,6 +759,15 @@ function openCount(loc,opts){ opts=opts||{};
       root.querySelectorAll('[data-none]').forEach(b=>b.onclick=()=>{ const k=b.dataset.none; if(!confirm(itemInfo(k).name+' — expected '+fmt(lines[k].exp)+', confirm that it is NOT here (counted 0)?')) return; lines[k].cnt=0; lines[k].how='none'; save(); focusTo='scan'; draw(); });
       root.querySelectorAll('[data-clear]').forEach(b=>b.onclick=()=>{ const k=b.dataset.clear; if(lines[k].tmp||!lines[k].exp) delete lines[k]; else { lines[k].cnt=null; lines[k].how=''; } save(); focusTo='scan'; draw(); }); };
     wireChips(); wireActs(d);
+    const di=d.querySelector('#ctDayIn'); if(di) di.addEventListener('change',async()=>{ const today=dayOf(Date.now()); let nd=di.value||today; if(nd>today) nd=today; if(nd===day){ di.value=day; return; }
+      const exp=nd>=today?mainAtTime(loc,sess.startedAt||Date.now()):mainAtTime(loc,tsForDay(nd)); const E={}; Object.keys(exp).forEach(k=>{ E[fbKey(k)]={k,q:+exp[k]||0}; });
+      let ch=0; Object.keys(lines).forEach(k=>{ const l=lines[k]; if(l.tmp) return; const e=E[fbKey(k)]; const q=e?e.q:0; if(q!==l.exp) ch++; });
+      if(!confirm('Change the date of this count: '+day+' → '+nd+'?\n\nExpected is recalculated as of the end of '+nd+' ('+ch+' line(s) change). The numbers already counted stay as they are.'+(nd<today?'\nWhen the count is applied, every movement after '+nd+' stays on top of it.':''))){ di.value=day; return; }
+      const seen={}; Object.keys(lines).forEach(k=>{ const l=lines[k]; if(l.tmp) return; const fk=fbKey(k); seen[fk]=1; const e=E[fk]; l.exp=e?e.q:0; if(l.how==='match'&&l.cnt!==l.exp) l.how='manual'; if(!l.exp&&l.cnt==null) delete lines[k]; });
+      Object.keys(E).forEach(fk=>{ if(!seen[fk]&&E[fk].q) lines[E[fk].k]={exp:E[fk].q,cnt:null,how:''}; });
+      const old=day; day=nd; sess.day=nd; if(CSESS[sk]) CSESS[sk].day=nd;
+      try{ await R.child('countSessions/'+sk+'/day').set(nd); await save(); alog('count_date',{text:'Count date changed '+old+' → '+nd+' · '+locName(loc),loc:loc}); toast('Count is now as of '+nd,'ok'); }catch(e){ toast('Not saved: '+((e&&e.message)||e),'err',4000); }
+      focusTo=null; draw(); });
     /* a number typed into Counted updates its row in place — the list is not rebuilt, so the cursor can go straight to the next row */
     d.querySelectorAll('.qi').forEach(i=>{ i.addEventListener('change',()=>{ if(!i.isConnected) return; const k=i.dataset.k, l=lines[k]; if(!l) return; if(qtyBad(i.value)){ i.value=l.cnt==null?'':l.cnt; i.select(); return; } const v=i.value.trim();
         l.cnt=v===''?null:Math.max(0,int(v)); l.how=l.cnt==null?'':'manual'; i.value=l.cnt==null?'':l.cnt; save(); calc();
